@@ -6,7 +6,9 @@ This is a browser port of the original pygame game, which shipped as `MemoryBurn
 
 ## Running it
 
-Open `index.html` in a browser, or serve the folder with any static server:
+Play it at https://memoryburn.andrenijman.com/ (GitHub Pages; `CNAME` holds the domain).
+
+To run it locally, open `index.html` in a browser, or serve the folder with any static server:
 
 ```sh
 python3 -m http.server 8000   # then open http://localhost:8000
