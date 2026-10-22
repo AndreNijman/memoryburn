@@ -2,6 +2,7 @@
  * MemoryBurn - js/data/data.js
  *
  * Content and tuning, ported value-for-value from the original pygame build (reference/MemoryBurn.py).
+ * The story is new and lives in js/data/story.js.
  * Shared by sim, render and UI so numbers cannot drift.
  */
 (function () {
@@ -115,24 +116,5 @@
     NoHit: { label: "Don't get hit for 12s", target: 12.0 },
     Collect: { label: 'Collect 15 materials', target: 15 },
     Kills: { label: 'Kill 40 enemies', target: 40 }
-  };
-
-  // Story beats shown before the given contract number. Each beat is [speaker, line].
-  D.STORY = {
-    1: [['MOTHERBOARD', 'Connection re-established. Subject: Cipher-9. Memory fragmentation at 87 percent.']],
-    2: [['BLACK HAT', 'You woke up in a cheap clinic with premium scars. Whoever did the job expected you to stay dead.']],
-    3: [['MOTHERBOARD', 'Each contract cracks a node. Keep pushing and you will remember who burned you.']],
-    4: [['FIXER', 'NovaCorp owns the cops and the air you breathe. Lucky for you, they still pay their invoices.']],
-    5: [['MARKET', 'Rumor on the wire: NovaCorp hired mercs to erase rogue fragments. That means you.']],
-    6: [['CIPHER-9', 'I remember a rooftop. A voice yelling my name. Static. Then nothing.']],
-    7: [['GHOST', "You keep chasing the shard like it's salvation."], ['GHOST', 'Newsflash: you were dangerous before they cut you up.']],
-    8: [['MOTHERBOARD', 'Sector K has your biographical shard. Expect ICE patterns copying your old tactics.']],
-    9: [['MOTHERBOARD', 'Do not trust the signal from Sector O. It is not me.']],
-    10: [['EVE', 'You are a fork that would not die. Stop chasing ghosts.']],
-    11: [['EVE', "NovaCorp archived the original you as 'asset drift'."], ['EVE', "They cloned the rest into product. Most of them broke. You didn't."]],
-    12: [['EVE', 'System integrity restored? No. Just a better lie. Welcome back, copy.']],
-    13: [['BLACK HAT', 'I pulled your payroll. You used to burn crews like me for fun.'], ['BLACK HAT', 'So tell me, copy-why should I help you finish the job?']],
-    14: [['FIXER', "Payment clears when the tower falls. Don't get sentimental now."]],
-    15: [['CIPHER-9', 'I remember the rooftop. I remember the voice. It was mine.'], ['CIPHER-9', "I signed the order to erase me. This city doesn't forgive legends."]]
   };
 })();

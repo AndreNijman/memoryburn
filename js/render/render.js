@@ -65,7 +65,9 @@
     var face = e.face || 1;
     var flash = e.flash_t > 0 ? 1 : 0;
     var lift = e.etype === 'skater' ? Math.sin(t * 14 + e.id) * 2 : Math.max(0, bob) * 3;
-    S.draw(g, key, x, y - hh * 0.08 - lift, { scale: sc * popS, sx: sx, sy: sy, flip: face < 0, flash: flash });
+    var so = { scale: sc * popS, sx: sx, sy: sy, flip: face < 0, flash: flash };
+    S.draw(g, key, x, y - hh * 0.08 - lift, so);
+    if (e.etype === 'overlord' && bossArt) S.draw(g, 'bossgear:' + bossArt, x, y - hh * 0.08 - lift, so); // named campaign boss
     if (e.etype === 'suicide' && Math.sin(t * 16 + e.id) > 0.3) { // blinking fuse light
       g.fillStyle = 'rgba(255,90,110,0.45)'; g.beginPath(); g.arc(x, y - hh * 0.24, 9, 0, TAU); g.fill();
     }
@@ -119,9 +121,11 @@
     }
   }
 
+  var bossArt = 0;
   R.world = function (g, state, prev, a, t, opts) {
     opts = opts || {};
-    var i, pos;
+    var i, pos, ct = MB.data.STORY.contract(state.wave);
+    bossArt = ct && ct.boss ? ct.boss.art : 0;
     R.drawFloor(g, state.biome);
     R.fx.drawGround(g);
 

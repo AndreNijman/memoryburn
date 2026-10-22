@@ -477,8 +477,101 @@
   // Other files add sprites here: S.register(key, w, h, drawFn) with drawFn(g) drawing centred on (0,0).
   S.register = function (key, w, h, fn) { MISC[key] = [w, h, fn]; };
 
+  /* ------------------------------------------------------------------ story cast (portraits) + boss gear
+   * Portraits use the hero body so the cast reads as the same world. bossgear:N overlays enemy:overlord
+   * (same canvas size) for the named bosses; boss:N is the overlord with its gear for portraits. */
+  var NPC = {
+    'npc:doc': [72, 92, function (g) {
+      g.translate(0, 8);
+      potatoBody(g, { skin: '#c98d5a', seed: 23 });
+      // head mirror on a band
+      body(g, rrect(-20, -22, 40, 6, 3), P.dark, LW, { bb: 8, hi: '#5a5170' });
+      body(g, circ(8, -24, 8), P.steel, LW, { bb: 8, lo: P.steelLo });
+      flat(g, circ(8, -24, 3.4), '#eef6ff');
+      // tired eyes: low flat brows
+      eye(g, -8, -6, 5, { lx: 0.1, ly: 0.25 }); eye(g, 9, -6, 5, { lx: 0.1, ly: 0.25 });
+      brow(g, -8, -11, 11, 0.05, 3); brow(g, 9, -11, 11, -0.05, 3);
+      // surgical mask pulled down to the chin
+      body(g, function (q) { q.moveTo(-15, 6); q.quadraticCurveTo(0, 2, 15, 6); q.lineTo(13, 18); q.quadraticCurveTo(0, 23, -13, 18); q.closePath(); }, '#8fd6e8', LW, { bb: 12 });
+      [10, 14].forEach(function (y) { g.beginPath(); g.moveTo(-10, y); g.quadraticCurveTo(0, y - 2, 10, y); g.lineWidth = 1.6; g.strokeStyle = '#5aa6bc'; g.stroke(); });
+      g.beginPath(); g.moveTo(-15, 8); g.lineTo(-21, 0); g.moveTo(15, 8); g.lineTo(21, 0); g.lineWidth = 2; g.strokeStyle = OUT; g.stroke();
+    }],
+    'npc:lucky': [72, 92, function (g) {
+      g.translate(0, 8);
+      potatoBody(g, { skin: '#efc187', seed: 29 });
+      // green bookie's eyeshade
+      flat(g, function (q) { q.moveTo(-22, -12); q.quadraticCurveTo(0, -20, 22, -12); q.lineTo(26, -4); q.quadraticCurveTo(0, -10, -26, -4); q.closePath(); }, 'rgba(90,200,110,0.85)', LW);
+      flat(g, rrect(-20, -16, 40, 5, 2.5), '#2f8a3f', 2.4);
+      eye(g, -8, 0, 5, { lx: 0.3 }); eye(g, 9, 0, 5, { lx: 0.3 });
+      brow(g, 9, -6, 9, -0.35, 3);
+      // grin with a gold tooth and a toothpick
+      g.beginPath(); g.moveTo(-9, 10); g.quadraticCurveTo(2, 20, 12, 8); g.quadraticCurveTo(2, 14, -9, 10); g.closePath();
+      g.fillStyle = P.mouth; g.fill(); g.lineWidth = 2.6; g.strokeStyle = OUT; g.stroke();
+      flat(g, rrect(3, 10, 4, 4, 1), P.yellow, 1.2);
+      g.beginPath(); g.moveTo(11, 10); g.lineTo(22, 4); g.lineWidth = 2.4; g.strokeStyle = '#d9b77a'; g.stroke();
+    }],
+    'npc:ren': [72, 92, function (g) {
+      g.translate(0, 8);
+      potatoBody(g, { skin: '#e8b57a', seed: 37 });
+      // jacket collar with the zip
+      body(g, function (q) { q.moveTo(-20, 12); q.quadraticCurveTo(-6, 16, 0, 26); q.quadraticCurveTo(6, 16, 20, 12); q.lineTo(18, 24); q.quadraticCurveTo(0, 30, -18, 24); q.closePath(); }, P.orange, LW, { bb: 10, lo: P.orangeLo });
+      g.beginPath(); g.moveTo(0, 20); g.lineTo(0, 28); g.lineWidth = 2; g.strokeStyle = OUT; g.stroke();
+      flat(g, rrect(-1.6, 18, 3.2, 5, 1), P.steel, 1.2);
+      // choppy fringe
+      body(g, function (q) { q.moveTo(-21, -6); q.quadraticCurveTo(-22, -27, 0, -27); q.quadraticCurveTo(22, -27, 21, -6); q.lineTo(15, -14); q.lineTo(10, -8); q.lineTo(4, -15); q.lineTo(-3, -8); q.lineTo(-9, -15); q.lineTo(-15, -7); q.closePath(); }, '#3b2a2e', LW, { bb: 14, hi: '#5d4248' });
+      eye(g, -8, -1, 5, { lx: -0.1 }); eye(g, 9, -1, 5, { lx: -0.1 });
+      brow(g, -8, -7, 9, 0.2, 2.8); brow(g, 9, -7, 9, -0.2, 2.8);
+      smile(g, 1, 8, 8, false, 2.4);
+    }],
+    'npc:lethe': [72, 92, function (g) { // the company mascot: a smiling memory shard
+      flat(g, ell(0, 30, 20, 5), 'rgba(0,0,0,0.25)');
+      body(g, poly([0, -36, 24, -4, 0, 26, -24, -4]), '#ff8cf0', LW + 0.6, { bb: 24, lo: '#c04fb4' });
+      flat(g, poly([0, -26, 8, -12, 0, -6, -8, -12]), '#ffd6f8');
+      eye(g, -8, -2, 4.4); eye(g, 8, -2, 4.4);
+      smile(g, 0, 7, 12, true, 2.4);
+    }],
+    'npc:shard': [72, 92, function (g) { // a recovered memory: warm, cracked
+      flat(g, circ(0, -4, 30), 'rgba(255,220,160,0.18)');
+      body(g, poly([0, -34, 20, -6, 6, 26, -16, 8, -20, -10]), '#e2cfa6', LW, { bb: 22, lo: '#a8916a' });
+      g.beginPath(); g.moveTo(-4, -26); g.lineTo(2, -8); g.lineTo(-6, 4); g.lineTo(0, 18); g.lineWidth = 2; g.strokeStyle = OUT; g.stroke();
+    }],
+    'bossgear:1': [180, 170, function (g) { // Appraiser: monocle on a chain, bow tie
+      g.beginPath(); g.arc(-26, -8, 17, 0, TAU); g.lineWidth = 9; g.strokeStyle = OUT; g.stroke();
+      g.lineWidth = 5; g.strokeStyle = P.yellow; g.stroke();
+      flat(g, circ(-26, -8, 13), 'rgba(220,240,255,0.25)');
+      g.beginPath(); g.moveTo(-42, -4); g.quadraticCurveTo(-60, 20, -50, 46); g.lineWidth = 3; g.strokeStyle = P.yellowLo; g.stroke();
+      body(g, poly([0, 50, -20, 40, -20, 62, 0, 52, 20, 62, 20, 40]), P.red, 4, { bb: 14 });
+      flat(g, rrect(-5, 45, 10, 10, 3), P.redLo, 3);
+    }],
+    'bossgear:2': [180, 170, function (g) { // Auctioneer: top hat over the crown, gavel
+      body(g, rrect(-62, -54, 124, 16, 8), '#2c2638', 4.2, { bb: 30, hi: '#4a4060' });
+      body(g, rrect(-40, -118, 80, 70, 10), '#2c2638', 4.2, { bb: 40, hi: '#4a4060' });
+      flat(g, rrect(-40, -70, 80, 14, 2), P.red, 3);
+      g.save(); g.translate(62, 26); g.rotate(-0.7);
+      body(g, rrect(-4, -4, 8, 44, 3), '#a4703c', 3.4, { bb: 10 });
+      body(g, rrect(-18, -16, 36, 18, 5), '#7a4a26', 3.6, { bb: 14 });
+      g.restore();
+    }],
+    'bossgear:3': [180, 170, function (g) { // Archivist: half-moon glasses, file tag on the crown
+      [-26, 26].forEach(function (x) {
+        g.beginPath(); g.moveTo(x - 17, -6); g.lineTo(x + 17, -6); g.quadraticCurveTo(x + 16, 12, x, 12); g.quadraticCurveTo(x - 16, 12, x - 17, -6); g.closePath();
+        g.fillStyle = 'rgba(200,230,255,0.22)'; g.fill(); g.lineWidth = 5; g.strokeStyle = OUT; g.stroke();
+      });
+      g.beginPath(); g.moveTo(-9, -4); g.quadraticCurveTo(0, -10, 9, -4); g.lineWidth = 5; g.strokeStyle = OUT; g.stroke();
+      g.beginPath(); g.moveTo(42, -50); g.lineTo(58, -30); g.lineWidth = 2.4; g.strokeStyle = OUT; g.stroke();
+      g.save(); g.translate(62, -18); g.rotate(0.25);
+      body(g, poly([-14, -10, 10, -10, 18, 0, 10, 10, -14, 10]), '#f3ead8', 3.4, { bb: 12 });
+      flat(g, circ(-8, 0, 2.6), OUT);
+      g.restore();
+    }]
+  };
+  [1, 2, 3].forEach(function (n) {
+    NPC['boss:' + n] = [180, 170, function (g) { ENEMY.overlord.draw(g); NPC['bossgear:' + n][2](g); }];
+  });
+
   function build(key) {
     var m;
+    if (NPC[key]) { var n = NPC[key]; return bake(key, n[0], n[1], n[2]); }
     if ((m = /^char:(\d)$/.exec(key))) return bakeChar(+m[1]);
     if ((m = /^gun:(\d)$/.exec(key))) return bakeGun(+m[1]);
     if ((m = /^enemy:(\w+)$/.exec(key)) && ENEMY[m[1]]) { var e = ENEMY[m[1]]; return bake(key, e.w, e.h, e.draw); }

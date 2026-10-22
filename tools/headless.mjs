@@ -1,6 +1,6 @@
 // Headless checks for MemoryBurn: loads every manifest entry with env "any" into a node vm (no DOM),
 // then plays runs with the bot. Usage: node tools/headless.mjs [scenario ...]   (default: all)
-// Scenarios: load determinism run chars coop shop snapshot
+// Scenarios: load determinism run chars coop shop story snapshot
 // Exit code is non-zero if anything fails.
 import vm from 'node:vm';
 import fs from 'node:fs';
@@ -111,6 +111,54 @@ if (run('shop')) {
   MB.sim.command(s, 0, { t: 'deploy' });
   check('shop: deploy -> wave 2', s.phase === 'play' && s.wave === 2 && Math.abs(s.waveTime - (32 + 1.2)) < 1e-9);
   void dmg0;
+}
+
+if (run('story')) {
+  const D = MB.data, ST = D.STORY;
+  const beats = [['intro', ST.intro], ['ending', ST.ending.lead], ...ST.ending.choices.map(c => ['ending:' + c.id, c.beats])];
+  const radio = [];
+  for (let n = 1; n <= ST.last; n++) {
+    const c = ST.contracts[n];
+    if (!c) { check('story: contract ' + n + ' exists', false); continue; }
+    if (c.scene) beats.push(['scene ' + n, c.scene]);
+    radio.push(...c.radio.map(b => ['radio ' + n, b]));
+    if (c.boss) radio.push(['boss ' + n, [c.boss.speaker, c.boss.enter]], ['boss ' + n, [c.boss.speaker, c.boss.down]]);
+  }
+  for (const k in ST.pools) radio.push(...ST.pools[k].map(b => ['pool ' + k, b]));
+  ST.gameover.forEach((pool, i) => radio.push(...pool.map(b => ['gameover ' + i, b])));
+  const bad = [];
+  const speaker = (where, who) => { if (!ST.speakers[who] || !ST.speakers[who].color || !ST.speakers[who].portrait) bad.push(where + ': unknown speaker ' + who); };
+  for (const [where, list] of beats) for (const [who, line] of list) {
+    speaker(where, who);
+    if (line[0] !== '@' && line.length > 240) bad.push(where + ': beat over 240 chars');
+  }
+  for (const [where, [who, line]] of radio) { speaker(where, who); if (line.length > 120) bad.push(where + ': radio line over 120 chars (' + line.length + ')'); }
+  for (let n = 1; n <= ST.last; n++) {
+    const c = ST.contracts[n] || {};
+    if (!D.BIOMES[c.district]) bad.push('contract ' + n + ': unknown district ' + c.district);
+    if (c.note && c.note.length > 200) bad.push('contract ' + n + ': note over 200 chars');
+    if (n > 1 && !c.note) bad.push('contract ' + n + ': no briefing note');
+    if (!!c.boss !== (n % 5 === 0)) bad.push('contract ' + n + ': boss does not match the overlord waves');
+  }
+  const archLines = [...ST.arch.intro, ...ST.arch.ending];
+  if (ST.arch.intro.length !== 8 || ST.arch.ending.length !== 8) bad.push('arch: need 8 intro and 8 ending lines');
+  if (archLines.some(l => l.length > 240)) bad.push('arch: line over 240 chars');
+  if (ST.gameover.length !== ST.acts.length) bad.push('gameover: need one pool per act');
+  check('story: script data is complete and fits the panels', bad.length === 0, bad.join('; '));
+  check('story: arch placeholders resolve', ST.resolve(ST.intro, 3).every(b => b[1][0] !== '@') && ST.resolve(ST.ending.choices[0].beats, 7).every(b => b[1][0] !== '@'));
+  check('story: act lookup', ST.actIndex(1) === 0 && ST.actIndex(5) === 0 && ST.actIndex(6) === 1 && ST.actIndex(11) === 2 && ST.actIndex(16) === 3 && ST.actIndex(40) === 3);
+
+  // the sim follows the district schedule through the campaign, then rolls freely
+  const s = MB.sim.create({ seed: 77 });
+  const seen = [s.biome];
+  while (s.wave < ST.last + 3) {
+    s.players[0].hp = s.players[0].max_hp; s.waveTime = 0; MB.sim.step(s, [{}]);
+    MB.sim.command(s, 0, { t: 'ready' }); MB.sim.command(s, 0, { t: 'deploy' });
+    seen.push(s.biome);
+  }
+  const want = Array.from({ length: ST.last }, (_, i) => ST.contracts[i + 1].district);
+  check('story: sim uses the scheduled districts', JSON.stringify(seen.slice(0, ST.last)) === JSON.stringify(want), seen.join(','));
+  check('story: afterburn districts are valid', seen.slice(ST.last).every(b => D.BIOMES[b]));
 }
 
 if (run('snapshot')) {

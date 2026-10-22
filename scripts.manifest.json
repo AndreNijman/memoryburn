@@ -1,6 +1,7 @@
 [
   {"path": "js/core/mb.js", "env": "any"},
   {"path": "js/data/data.js", "env": "any"},
+  {"path": "js/data/story.js", "env": "any"},
   {"path": "js/sim/sim.js", "env": "any"},
   {"path": "js/sim/bot.js", "env": "any"},
   {"path": "js/render/sprites.js", "env": "browser"},
@@ -10,5 +11,6 @@
   {"path": "js/input/input.js", "env": "browser"},
   {"path": "js/ui/ui.js", "env": "browser"},
   {"path": "js/ui/screens.js", "env": "browser"},
+  {"path": "js/ui/radio.js", "env": "browser"},
   {"path": "js/main.js", "env": "browser"}
 ]

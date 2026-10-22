@@ -1,6 +1,6 @@
 # Memory Burn
 
-A cyberpunk wave-survival shooter. You fight through timed contracts across seven districts, spend eddies in the Back-Alley Market between waves, and piece together who burned you.
+A cyberpunk wave-survival shooter. Somebody burned out your memory and Lethe & Sons is selling it as shards at forty eddies a hit. You fight through 15 timed contracts across seven districts to get it back, spending eddies in the Back-Alley Market between waves. After the campaign ends, Afterburn keeps the run going.
 
 This is a browser port of the original pygame game, which shipped as `MemoryBurn.exe`. It uses plain JavaScript and `<canvas>`, with no build step and no dependencies. Every sprite is drawn in code, in a chunky outlined style with flat colours, round bodies and blob enemies with eyes.
 
@@ -37,7 +37,8 @@ URL flags:
 index.html               page shell; loads the scripts in manifest order and waits for the fonts
 scripts.manifest.json    script order; env "any" scripts must run without a DOM
 js/core/mb.js            MB namespace, seeded RNG (mulberry32), cosmetic RNG, math utils
-js/data/data.js          all content and tuning, copied value for value from the original
+js/data/data.js          content and tuning, copied value for value from the original
+js/data/story.js         the campaign script: contracts, scenes, radio lines, ending (new; see docs/story.md)
 js/sim/sim.js            the game rules (deterministic)
 js/sim/bot.js            autopilot, used by the menu background and the tests
 js/render/sprites.js     procedural sprites baked to offscreen canvases, plus district floors
@@ -47,7 +48,9 @@ js/render/render.js      draws the arena from sim state with interpolation
 js/input/input.js        keyboard, mouse and gamepad turned into sim inputs
 js/ui/ui.js              immediate-mode canvas widgets
 js/ui/screens.js         every screen plus the HUD
+js/ui/radio.js           in-wave radio chatter driven by the script and sim events
 js/main.js               fixed-step loop, screen state machine, settings
+docs/story.md            story bible: premise, cast, reveal order, rules for new lines
 reference/               recovered original source and the bytecode checker used to verify it
 tools/                   headless tests, browser playtest, screenshot helper, sprite sheet
 ```
@@ -64,8 +67,8 @@ The sim is written so that a host-authoritative online mode (the model broIsAPot
 ## Tests
 
 ```sh
-node tools/headless.mjs      # sim: determinism, full bot runs, all 8 characters, 4-player co-op, shop, snapshots
-node tools/playtest.mjs      # browser: real clicks and keys through menu > run > pause > shop > preview > game over
+node tools/headless.mjs      # sim: determinism, bot runs, all 8 characters, 4-player co-op, shop, story data, snapshots
+node tools/playtest.mjs      # browser: real clicks and keys through menu > story > run > pause > shop > briefing > ending > game over
 node tools/shot.mjs 'index.html?screen=shop' out.png 1920 1080   # screenshot
 ```
 
@@ -97,6 +100,16 @@ These are original behaviours. They change the balance but aren't crashes, so th
 
 ### New in this port
 
+- **The story.** The original had 15 one-line beats and no ending. The port has a written campaign in three acts:
+  - Named contracts, each with a scheduled district.
+  - Three named bosses.
+  - Story scenes with speaker portraits.
+  - Radio chatter during waves, with its own toggle in Options.
+  - Doc's opening and closing lines depend on your archetype.
+  - The game-over line depends on how far you got.
+  - The ending is a choice, followed by Afterburn for endless play.
+
+  See `docs/story.md`. The sim reads only the district schedule. It still makes the same random roll it made before, so the RNG stream is unchanged.
 - A fixed 60 Hz simulation with interpolated rendering.
 - Procedural sprites and per-district floors, weather and lighting.
 - A shop stats panel and per-card stat previews, computed by applying the item to a copy of the player with the real game code.

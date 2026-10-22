@@ -5,7 +5,7 @@
  * act only through the app object from main.js (app.cmd for sim commands, app.go for navigation),
  * so the same screens work when the sim lives on a host.
  *
- *   MB.screens.<name>(app, g, dt)   names: menu options chars difficulty intro hud shop preview pause gameover
+ *   MB.screens.<name>(app, g, dt)   names: menu options chars difficulty intro hud shop preview pause gameover ending
  */
 (function () {
   'use strict';
@@ -85,6 +85,7 @@
     s.dmgNums = UI.toggle('o:dmg', 'Damage Numbers', s.dmgNums, x, yy, colW); yy += step;
     s.reducedFlashes = UI.toggle('o:flash', 'Reduced Flashes', s.reducedFlashes, x, yy, colW); yy += step;
     s.rangeRing = UI.toggle('o:ring', 'Show Range Ring', s.rangeRing, x, yy, colW); yy += step;
+    s.radio = UI.toggle('o:radio', 'Radio Chatter', s.radio, x, yy, colW); yy += step;
     var pct = function (v) { return Math.round(v) + '%'; };
     yy = y;
     s.uiScale = UI.slider('o:ui', 'HUD Scale', s.uiScale, 75, 140, 5, x2, yy, colW, pct); yy += step;
@@ -126,7 +127,7 @@
     backdrop(g, 0.62); scanlines(g, app.t);
     var intro = app.t - (app.menuT0 || 0);
     title(g, 'MEMORY BURN', W / 2, 270, 170, app.t, intro);
-    UI.text('Fragments of who you were keep fighting back.', W / 2, 395, { size: 32, font: 'body', align: 'center', color: C.text });
+    UI.text('Somebody sold your memories. Forty eddies a hit.', W / 2, 395, { size: 32, font: 'body', align: 'center', color: C.text });
     UI.text('By Andre Nijman', W / 2, 440, { size: 24, font: 'body', align: 'center', color: C.dim, outline: false });
     // character line-up
     for (var i = 0; i < 8; i++) {
@@ -212,51 +213,110 @@
     if (UI.button('df:back', 'Back', 60, H - 130, 220, 70, { size: 30, tone: 'ghost' }) || IN.back()) app.go('chars');
   };
 
-  /* ------------------------------------------------------------------ story (intro + between contracts) */
-  var SPEAKER_COL = { MOTHERBOARD: '#4ff0d8', 'BLACK HAT': '#ef4d5f', FIXER: '#ffd35a', MARKET: '#79e36a', 'CIPHER-9': '#5fb3ff', GHOST: '#b9aec8', EVE: '#ff8cf0' };
-  // Returns true while the story panel is up. `st` = {beats, idx, chars}
-  function storyPanel(app, g, st, dt) {
-    var beat = st.beats[st.idx], who = beat[0], line = beat[1], col = SPEAKER_COL[who] || C.cyan;
-    st.chars = Math.min(line.length, (st.chars || 0) + dt * 42 * (st.fast ? 4 : 1));
-    var px = W / 2 - 620, py = 230, pw = 1240, ph = 520;
-    UI.text('Memory Node Access', W / 2, 150, { size: 64, align: 'center' });
-    UI.panel(px, py, pw, ph, { glow: S.rgba(col, 0.5) });
-    // speaker avatar
-    var ax = px + 120, ay = py + 150;
-    g.fillStyle = C.edge; g.beginPath(); g.arc(ax, ay, 84, 0, TAU); g.fill();
-    g.fillStyle = S.shade(col, -0.6); g.beginPath(); g.arc(ax, ay, 76, 0, TAU); g.fill();
-    if (who === 'CIPHER-9') S.draw(g, 'char:' + app.arch, ax, ay + 6, { scale: 1.15 });
-    else {
-      g.save(); g.beginPath(); g.arc(ax, ay, 76, 0, TAU); g.clip();
-      g.globalAlpha = 0.25; g.fillStyle = col;
-      for (var yy = ay - 80; yy < ay + 80; yy += 8) g.fillRect(ax - 80, yy + ((app.t * 30) % 8), 160, 3);
-      g.restore();
-      UI.text(who.charAt(0), ax, ay + 4, { size: 92, align: 'center', color: col });
+  /* ------------------------------------------------------------------ story (intro, between contracts, ending) */
+  var ST = D.STORY;
+  function runArch(app) { return app.sim ? app.sim.players[app.slot].arch : app.arch; }
+
+  // Speaker badge: the cast portrait clipped into a ring in the speaker's colour.
+  SC.portrait = function (g, app, who, x, y, r) {
+    var sp = ST.speakers[who] || {}, col = sp.color || C.cyan, key = sp.portrait;
+    if (key === 'char') key = 'char:' + runArch(app);
+    g.fillStyle = C.edge; g.beginPath(); g.arc(x, y, r + 8, 0, TAU); g.fill();
+    g.fillStyle = S.shade(col, -0.62); g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
+    g.save(); g.beginPath(); g.arc(x, y, r, 0, TAU); g.clip();
+    g.globalAlpha = 0.18; g.fillStyle = col;
+    for (var yy = y - r; yy < y + r; yy += 8) g.fillRect(x - r, yy + ((app.t * 24) % 8), r * 2, 3);
+    g.globalAlpha = 1;
+    var spr = key && S.get(key);
+    if (spr) {
+      var big = spr.w > 100, sc = big ? r * 1.7 / 132 : r / 34;
+      S.draw(g, key, x, y + r * (big ? 0.28 : 0.2), { scale: sc });
     }
-    UI.rr(px + 230, py + 50, UI.measure(who, 30) + 40, 50, 12); g.fillStyle = col; g.fill();
-    UI.text(who, px + 250, py + 76, { size: 30, color: C.edge, outline: false });
-    var lines = UI.wrap(line.slice(0, Math.floor(st.chars)), pw - 300, 34, 'body');
-    lines.slice(0, 6).forEach(function (ln, k) { UI.text(ln, px + 232, py + 150 + k * 50, { size: 34, font: 'body', color: C.text, outline: false }); });
+    g.restore();
+    g.lineWidth = 4; g.strokeStyle = col; g.beginPath(); g.arc(x, y, r, 0, TAU); g.stroke();
+  };
+
+  // Header line for a story panel: act name + title, or the contract name.
+  SC.actHead = function (wave) { var a = ST.acts[ST.actIndex(wave)]; return a.name + '  ·  ' + a.title; };
+
+  // Returns true while the story panel is up. `st` = {beats, idx, chars, head}
+  function storyPanel(app, g, st, dt, opts) {
+    opts = opts || {};
+    var beat = st.beats[st.idx], who = beat[0], line = beat[1], sp = ST.speakers[who] || {}, col = sp.color || C.cyan;
+    var memory = who === 'FRAGMENT';
+    st.chars = Math.min(line.length, (st.chars || 0) + dt * 46);
+    var px = W / 2 - 640, py = 250, pw = 1280, ph = 440;
+    if (st.head) {
+      UI.text(st.head, W / 2, 130, { size: 64, align: 'center', color: memory ? '#f1e3c4' : C.text });
+      if (st.sub) UI.text(st.sub, W / 2, 190, { size: 28, font: 'body', align: 'center', color: C.dim, outline: false });
+    }
+    UI.panel(px, py, pw, ph, memory ? { glow: S.rgba(col, 0.6), fill: '#2b2320', lo: '#1c1714' } : { glow: S.rgba(col, 0.5) });
+    if (memory) { // old-film grain over recovered memories
+      g.save(); UI.rr(px, py, pw, ph, 18); g.clip();
+      g.fillStyle = 'rgba(255,230,180,0.05)';
+      for (var k = 0; k < 40; k++) g.fillRect(px + MB.fx.uniform(0, pw), py, 2, ph);
+      g.restore();
+    }
+    SC.portrait(g, app, who, px + 130, py + 150, 84);
+    var label = who === 'NINE' ? 'YOU' : who, tag = sp.tag;
+    UI.rr(px + 250, py + 46, UI.measure(label, 30) + 40, 50, 12); g.fillStyle = col; g.fill();
+    UI.text(label, px + 270, py + 72, { size: 30, color: C.edge, outline: false });
+    if (tag) UI.text(tag, px + 250 + UI.measure(label, 30) + 60, py + 72, { size: 22, color: col, outlineW: 5 });
+    var lines = UI.wrap(line.slice(0, Math.floor(st.chars)), pw - 330, 34, 'body');
+    lines.slice(0, 6).forEach(function (ln, k) {
+      UI.text(ln, px + 252, py + 150 + k * 48, { size: 34, font: 'body', color: memory ? '#f1e3c4' : C.text, outline: false });
+    });
     // pager dots
     for (var i = 0; i < st.beats.length; i++) {
-      g.fillStyle = i === st.idx ? col : '#5a5068'; g.beginPath(); g.arc(W / 2 - (st.beats.length - 1) * 14 + i * 28, py + ph - 50, 8, 0, TAU); g.fill();
+      g.fillStyle = i === st.idx ? col : '#5a5068'; g.beginPath(); g.arc(W / 2 - (st.beats.length - 1) * 14 + i * 28, py + ph - 44, 8, 0, TAU); g.fill();
     }
-    var advance = UI.button('st:next', st.idx === st.beats.length - 1 && st.chars >= line.length ? 'Continue' : 'Next', px + pw - 260, py + ph - 90, 220, 66, { tone: 'primary', size: 30 })
+    var last = st.idx === st.beats.length - 1 && st.chars >= line.length;
+    var advance = UI.button('st:next', last ? (opts.lastLabel || 'Continue') : 'Next', px + pw - 280, py + ph - 88, 240, 66, { tone: 'primary', size: 30 })
       || IN.pressed('Space') || IN.confirm();
-    if (st.idx > 0 && UI.button('st:back', 'Back', px + 40, py + ph - 90, 180, 66, { size: 30 })) { st.idx--; st.chars = 0; }
-    app.settings.skipStory = UI.toggle('st:skip', 'Skip story this run', app.settings.skipStory, px + pw - 470, py - 94 + 30, 430);
-    if (app.settings.skipStory) return false;
+    if (st.idx > 0 && UI.button('st:back', 'Back', px + 40, py + ph - 88, 180, 66, { size: 30 })) { st.idx--; st.chars = 0; }
+    if (!opts.noSkip) {
+      app.settings.skipStory = UI.toggle('st:skip', 'Skip story', app.settings.skipStory, px + pw - 330, py + ph + 40, 330);
+      if (app.settings.skipStory) return false;
+    }
     if (advance) {
       if (st.chars < line.length) st.chars = line.length;
       else { st.idx++; st.chars = 0; if (st.idx >= st.beats.length) return false; }
     }
-    UI.text('Click Next or press Space.', W / 2, py + ph + 70, { size: 24, font: 'body', align: 'center', color: C.dim, outline: false });
+    UI.text('Space or Enter to continue', px, py + ph + 62, { size: 24, font: 'body', color: C.dim, outline: false });
     return true;
   }
 
   SC.intro = function (app, g, dt) {
     backdrop(g, 0.85); scanlines(g, app.t);
-    if (!storyPanel(app, g, app.story, dt)) { app.saveSettings(); app.go('play'); }
+    if (!storyPanel(app, g, app.story, dt)) { app.story = null; app.saveSettings(); app.go('play'); }
+  };
+
+  // After the last contract: the lead-in, the choice, the epilogue, then Afterburn or the menu.
+  SC.ending = function (app, g, dt) {
+    var e = app.ending;
+    backdrop(g, 0.97); scanlines(g, app.t);
+    if (e.stage === 'lead' || e.stage === 'epilogue') {
+      if (storyPanel(app, g, e.story, dt, { noSkip: true, lastLabel: e.stage === 'lead' ? 'Decide' : 'Continue' })) return;
+      e.stage = e.stage === 'lead' ? 'choice' : 'done'; IN.flush(); UI.clearFocus();
+      return;
+    }
+    if (e.stage === 'choice') {
+      UI.text('The core shard', W / 2, 200, { size: 72, align: 'center' });
+      S.draw(g, 'npc:shard', W / 2, 400 + Math.sin(app.t * 2) * 8, { scale: 2.6 });
+      ST.ending.choices.forEach(function (c, i) {
+        if (UI.button('end:' + c.id, c.label, W / 2 - 560 + i * 600, 620, 520, 130, { tone: i === 0 ? 'primary' : 'danger', size: 46, sub: c.sub })) {
+          e.choice = c.id; e.stage = 'epilogue';
+          e.story = { beats: ST.resolve(c.beats, runArch(app)), idx: 0, chars: 0, head: 'Epilogue', sub: c.label };
+        }
+      });
+      return;
+    }
+    title(g, 'CAMPAIGN CLEAR', W / 2, 260, 130, app.t, 99);
+    UI.text(e.choice === 'plug' ? 'You plugged it in.' : 'You smashed it.', W / 2, 390, { size: 40, align: 'center', color: C.text });
+    UI.text('Lethe still wants its stock back. Afterburn keeps this run going for as long as you last.', W / 2, 470,
+      { size: 28, font: 'body', align: 'center', color: C.dim, outline: false });
+    if (UI.button('end:on', 'Keep running', W / 2 - 460, 580, 440, 100, { tone: 'primary', size: 44, sub: 'Afterburn' }) || IN.confirm()) { app.ending = null; app.go('shop'); }
+    if (UI.button('end:menu', 'Menu', W / 2 + 20, 580, 440, 100, { size: 44 }) || IN.back()) { app.ending = null; app.toMenu(); }
   };
 
   /* ------------------------------------------------------------------ HUD */
@@ -315,10 +375,13 @@
       var k2 = app.bannerT, inA = Math.min(1, (2.4 - k2) / 0.25), outA = Math.min(1, k2 / 0.4), al = Math.min(inA, outA);
       g.save(); g.globalAlpha = al;
       var by = 300 - (1 - inA) * 40;
-      UI.text(st.wave % 5 === 0 ? 'OVERLORD CONTRACT' : 'CONTRACT ' + st.wave, VW / 2, by, { size: 88, align: 'center', color: st.wave % 5 === 0 ? '#ff6a7a' : C.text });
-      UI.text(st.biome + '  —  ' + b.notes, VW / 2, by + 70, { size: 30, font: 'body', align: 'center', color: C.text });
+      var ct = ST.contract(st.wave), bossW = st.wave % 5 === 0;
+      var head = ct ? (ct.boss ? ct.boss.name.toUpperCase() : ct.title.toUpperCase()) : bossW ? 'OVERLORD CONTRACT' : st.wave > ST.last ? 'AFTERBURN ' + (st.wave - ST.last) : 'CONTRACT ' + st.wave;
+      UI.text(head, VW / 2, by, { size: 88, align: 'center', color: bossW ? '#ff6a7a' : C.text });
+      UI.text('Contract ' + st.wave + '  ·  ' + st.biome + '  ·  ' + b.notes, VW / 2, by + 70, { size: 30, font: 'body', align: 'center', color: C.text });
       g.restore();
     }
+    MB.radio.draw(app, g, VW, H / s);
     g.restore();
   };
 
@@ -428,11 +491,12 @@
       if (storyPanel(app, g, app.story, dt)) return;
       app.story = null; app.saveSettings(); IN.flush(); // the press that ended the story must not also deploy
     }
-    var pv = MB.sim.previewLines(st);
-    UI.text('Contract Briefing', W / 2, 120, { size: 72, align: 'center' });
-    var px = W / 2 - 640, py = 200, pw = 1280, ph = 620;
+    var pv = MB.sim.previewLines(st), next = st.wave + 1, ct = ST.contract(next);
+    UI.text('Contract Briefing', W / 2, 110, { size: 72, align: 'center' });
+    UI.text(SC.actHead(next), W / 2, 168, { size: 26, font: 'body', align: 'center', color: C.dim, outline: false });
+    var px = W / 2 - 640, py = 200, pw = 1280, ph = 700;
     UI.panel(px, py, pw, ph);
-    UI.text(pv.title, px + 50, py + 60, { size: 44 });
+    UI.text('Contract ' + next + (ct ? ':  ' + ct.title : ''), px + 50, py + 60, { size: 44, color: ct && ct.boss ? '#ff6a7a' : C.text });
     // district thumbnail
     var tx = px + 50, ty = py + 110, tw = 480, th = 300;
     g.save(); UI.rr(tx - 5, ty - 5, tw + 10, th + 10, 22); g.fillStyle = C.edge; g.fill();
@@ -446,18 +510,28 @@
     UI.text('District notes', dx, dy, { size: 24, color: P.yellow, outlineW: 5 });
     UI.text(pv.notes, dx, dy + 40, { size: 30, font: 'body', color: C.text, outline: false });
     UI.text('Likely hostiles', dx, dy + 110, { size: 24, color: P.yellow, outlineW: 5 });
-    pv.hostiles.forEach(function (k, i) {
-      var ex = dx + 60 + i * 200, ey = dy + 200;
-      S.draw(g, 'shadow', ex, ey + 36, { scale: 1.0 });
-      S.draw(g, 'enemy:' + k, ex, ey - Math.abs(Math.sin(app.t * 5 + i)) * 6, { scale: 0.95 });
-      UI.text(D.ENEMY_INFO[k].name, ex, ey + 70, { size: 26, align: 'center' });
+    var boss = ct && ct.boss, foes = pv.boss ? pv.hostiles.slice(0, 2).concat(['overlord']) : pv.hostiles;
+    foes.forEach(function (k, i) {
+      var ex = dx + 60 + i * 200, ey = dy + 200, isBoss = k === 'overlord';
+      S.draw(g, 'shadow', ex, ey + 36, { scale: isBoss ? 1.6 : 1.0 });
+      S.draw(g, isBoss && boss ? 'boss:' + boss.art : 'enemy:' + k, ex + (isBoss ? 30 : 0), ey - (isBoss ? 14 : 0) - Math.abs(Math.sin(app.t * 5 + i)) * 6, { scale: isBoss ? 0.62 : 0.95 });
+      UI.text(isBoss && boss ? boss.name : D.ENEMY_INFO[k].name, ex + (isBoss ? 30 : 0), ey + 70, { size: 26, align: 'center', color: isBoss ? '#ff6a7a' : C.text });
     });
     if (pv.boss) {
       var bp = 0.6 + 0.4 * Math.sin(app.t * 6);
-      UI.text('OVERLORD INBOUND', dx, dy + 340, { size: 40, color: 'rgba(255,106,122,' + bp + ')' });
-      S.draw(g, 'enemy:overlord', dx + 560, dy + 330, { scale: 0.75 });
+      UI.text('BOSS INBOUND', px + pw - 50, py + 60, { size: 36, align: 'right', color: 'rgba(255,106,122,' + bp + ')' });
     }
-    UI.text(pv.side, px + 50, py + ph - 150, { size: 26, font: 'body', color: C.dim, outline: false });
+    // the fixer's note (Afterburn: a random line from the pool, fixed for this briefing)
+    var note = ct && ct.note ? ['LUCKY', ct.note] : null;
+    if (!note && next > ST.last) { if (!app.briefNote || app.briefNote.wave !== next) app.briefNote = { wave: next, b: MB.fx.choice(ST.pools.afterburn) }; note = app.briefNote.b; }
+    if (note) {
+      var ny = py + 450;
+      SC.portrait(g, app, note[0], px + 100, ny + 44, 44);
+      UI.text(note[0], px + 170, ny + 4, { size: 24, color: ST.speakers[note[0]].color, outlineW: 5 });
+      UI.wrap(note[1], pw - 240, 28, 'body').slice(0, 3).forEach(function (ln, k) {
+        UI.text(ln, px + 170, ny + 40 + k * 34, { size: 28, font: 'body', color: C.text, outline: false });
+      });
+    }
     var p = st.players[app.slot], waiting = p.ready && st.players.some(function (o) { return !o.ready; });
     if (UI.button('pv:go', waiting ? 'Waiting…' : 'Deploy', W / 2 - 220, py + ph - 110, 440, 86, { tone: 'good', size: 44, disabled: waiting }) || (!waiting && (IN.pressed('Space') || IN.confirm()))) app.cmd({ t: 'deploy' });
   };
@@ -510,21 +584,31 @@
   SC.gameover = function (app, g) {
     var st = app.sim, p = st.players[app.slot];
     var k = Math.min(1, app.screenT / 0.5);
+    if (!app.deathLine || app.deathLine.sim !== st) app.deathLine = { sim: st, b: MB.fx.choice(ST.gameover[ST.actIndex(st.wave)]) };
+    var dl = app.deathLine.b;
     UI.dim(0.7 * k);
     g.save(); g.globalAlpha = k;
-    title(g, 'GAME OVER', W / 2, 250, 150, app.t, 99);
-    UI.text('Wave reached: ' + st.wave, W / 2, 380, { size: 48, align: 'center', color: '#ffc0c8' });
-    UI.panel(W / 2 - 420, 450, 840, 300);
-    S.draw(g, 'char:' + p.arch, W / 2 - 290, 600, { scale: 1.5, rot: 1.35, alpha: 0.9 });
+    title(g, 'GAME OVER', W / 2, 200, 150, app.t, 99);
+    var ct = ST.contract(st.wave);
+    UI.text('Contract ' + st.wave + (ct ? ':  ' + ct.title : st.wave > ST.last ? '  ·  Afterburn' : ''), W / 2, 318, { size: 44, align: 'center', color: '#ffc0c8' });
+    // the cast reacts
+    var lw = Math.min(1100, UI.measure(dl[1], 28, 'body') + 40), lx = W / 2 - (lw + 90) / 2 + 90;
+    SC.portrait(g, app, dl[0], lx - 50, 400, 36);
+    UI.text(dl[0], lx, 380, { size: 22, color: ST.speakers[dl[0]].color, outlineW: 5 });
+    UI.wrap(dl[1], 1100, 28, 'body').slice(0, 2).forEach(function (ln, n) {
+      UI.text(ln, lx, 414 + n * 32, { size: 28, font: 'body', color: C.text, outline: false });
+    });
+    UI.panel(W / 2 - 420, 490, 840, 290);
+    S.draw(g, 'char:' + p.arch, W / 2 - 290, 640, { scale: 1.5, rot: 1.35, alpha: 0.9 });
     var lines = [['Character', shortName(D.ARCHETYPES[p.arch])], ['Difficulty', st.difficulty], ['Kills', String(st.kills)], ['Items', String(p.items.length)], ['District', st.biome]];
     lines.forEach(function (l, i) {
-      UI.text(l[0], W / 2 - 140, 500 + i * 48, { size: 26, font: 'body', color: C.dim, outline: false });
-      UI.text(l[1], W / 2 + 380, 500 + i * 48, { size: 30, align: 'right' });
+      UI.text(l[0], W / 2 - 140, 536 + i * 48, { size: 26, font: 'body', color: C.dim, outline: false });
+      UI.text(l[1], W / 2 + 380, 536 + i * 48, { size: 30, align: 'right' });
     });
     g.restore();
     if (app.screenT > 0.6) {
-      if (UI.button('go:retry', 'Retry', W / 2 - 430, 820, 410, 90, { tone: 'primary', size: 44 }) || IN.confirm()) app.startRun();
-      if (UI.button('go:menu', 'Menu', W / 2 + 20, 820, 410, 90, { size: 44 }) || IN.back()) app.toMenu();
+      if (UI.button('go:retry', 'Retry', W / 2 - 430, 850, 410, 90, { tone: 'primary', size: 44 }) || IN.confirm()) app.startRun();
+      if (UI.button('go:menu', 'Menu', W / 2 + 20, 850, 410, 90, { size: 44 }) || IN.back()) app.toMenu();
     }
   };
 })();

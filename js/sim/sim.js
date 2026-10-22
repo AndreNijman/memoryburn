@@ -355,7 +355,11 @@
   }
 
   /* ------------------------------------------------------------------ run flow */
-  function pickBiome(rng) { return rng.choice(D.BIOME_NAMES); }
+  // Campaign contracts have a scheduled district; the roll still happens so the RNG stream is the same either way.
+  function pickBiome(rng, wave) {
+    var roll = rng.choice(D.BIOME_NAMES), c = D.STORY && D.STORY.contracts[wave];
+    return c && c.district ? c.district : roll;
+  }
 
   function pickQuest(state, rng) {
     var q = rng.choice(['NoHit', 'Collect', 'Kills']);
@@ -388,7 +392,7 @@
       var off = specs.length > 1 ? (i - (specs.length - 1) / 2) * 90 : 0;
       state.players.push(makePlayer(i, sp.arch || 0, W / 2 + off, H / 2));
     });
-    state.biome = pickBiome(rng);
+    state.biome = pickBiome(rng, 1);
     pickQuest(state, rng);
     state.rng = { s: rng.s };
     return state;
@@ -597,7 +601,7 @@
       rollShop(state, rng, p);
     });
     state.phase = 'shop';
-    state.nextBiome = pickBiome(rng);
+    state.nextBiome = pickBiome(rng, state.wave + 1);
     ev(state, { t: 'waveEnd', wave: state.wave, questDone: done, reward: reward });
   }
 
@@ -639,7 +643,7 @@
   function startNextWave(state, rng) {
     state.wave += 1;
     state.waveTime = D.WAVE_TIME + Math.min(15, state.wave * 0.6);
-    state.biome = state.nextBiome || pickBiome(rng); state.nextBiome = null;
+    state.biome = state.nextBiome || pickBiome(rng, state.wave); state.nextBiome = null;
     pickQuest(state, rng);
     state.spawnTimer = 0; state.pulseT = 0;
     state.players.forEach(function (p) { p.ready = false; p.x = clamp(p.x, 18, W - 18); p.vx = 0; p.vy = 0; p.dashing = false; });

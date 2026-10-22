@@ -7,7 +7,7 @@
  */
 (function () {
   'use strict';
-  var D = MB.data, R = MB.render, IN = MB.input, UI = MB.ui, SC = MB.screens;
+  var D = MB.data, R = MB.render, IN = MB.input, UI = MB.ui, SC = MB.screens, ST = MB.data.STORY;
   var W = D.VIRTUAL_W, H = D.VIRTUAL_H, STEP = D.STEP;
   var canvas, g;
   var params = new URLSearchParams(location.search);
@@ -16,7 +16,7 @@
   var KEY = 'memoryburn.settings.v1';
   var DEFAULTS = {
     manualFire: false, aimAssist: false, shake: true, tracers: true, dmgNums: true, reducedFlashes: false, rangeRing: true,
-    uiScale: 100, textSize: 100, vfx: 100, gameSpeed: 100, dmgTaken: 100, fpsCap: 0, skipStory: false
+    uiScale: 100, textSize: 100, vfx: 100, gameSpeed: 100, dmgTaken: 100, fpsCap: 0, skipStory: false, radio: true
   };
   function loadSettings() {
     var s = {}, k;
@@ -35,7 +35,7 @@
     version: '0.2.0', screen: 'menu', screenT: 0, t: 0, menuT0: 0,
     settings: loadSettings(), debug: params.has('debug'),
     sim: null, slot: 0, prev: null, alpha: 1, acc: 0,
-    arch: 0, difficulty: 'Normal', pauseTab: 0, story: null, bannerT: 0, deathT: 0,
+    arch: 0, difficulty: 'Normal', pauseTab: 0, story: null, ending: null, bannerT: 0, deathT: 0,
     dps: 0, fps: 60, optionsReturn: 'menu'
   };
   var dmgLog = [];
@@ -78,10 +78,11 @@
     });
     app.slot = 0; app.prev = null; app.acc = 0; app.alpha = 1; dmgLog = []; app.dps = 0;
     app.bannerT = 2.4; app.deathT = 0; app.pauseTab = 0;
-    R.fx.reset();
-    var beats = D.STORY[1];
-    if (beats && !app.settings.skipStory) { app.story = { beats: beats, idx: 0, chars: 0 }; app.go('intro'); }
-    else app.go('play');
+    R.fx.reset(); MB.radio.reset(); app.ending = null;
+    if (!app.settings.skipStory) {
+      app.story = { beats: ST.resolve(ST.intro, app.arch), idx: 0, chars: 0, head: SC.actHead(1), sub: 'Doc\'s clinic, Neon Grid' };
+      app.go('intro');
+    } else app.go('play');
   };
   app.toMenu = function () { app.sim = null; R.fx.reset(); app.go('menu'); };
 
@@ -97,10 +98,15 @@
   function afterSim() {
     var s = app.sim;
     if (!s) return;
-    if (s.phase === 'shop' && app.screen === 'play') app.go('shop');
-    else if (s.phase === 'preview' && app.screen === 'shop') {
-      var beats = D.STORY[s.wave + 1];
-      app.story = beats && !app.settings.skipStory ? { beats: beats, idx: 0, chars: 0 } : null;
+    if (s.phase === 'shop' && app.screen === 'play') {
+      if (s.wave === ST.last && !app.settings.skipStory) { // the campaign's last contract just ended
+        app.ending = { stage: 'lead', choice: null, story: { beats: ST.ending.lead, idx: 0, chars: 0, head: 'The Vault', sub: 'Under the reactor' } };
+        app.go('ending');
+      } else app.go('shop');
+    } else if (s.phase === 'preview' && app.screen === 'shop') {
+      var ct = ST.contract(s.wave + 1);
+      app.story = ct && ct.scene && !app.settings.skipStory
+        ? { beats: ST.resolve(ct.scene, s.players[app.slot].arch), idx: 0, chars: 0, head: SC.actHead(s.wave + 1), sub: 'Before contract ' + (s.wave + 1) + ': ' + ct.title } : null;
       app.go('preview');
     } else if (s.phase === 'play' && app.screen === 'preview') {
       R.fx.reset(); app.prev = null; app.acc = 0; app.bannerT = 2.4; dmgLog = [];
@@ -133,6 +139,7 @@
       var inputs = s.players.map(function (pl, i) { return i === app.slot ? sampleInput(s) : MB.bot.input(s, i); });
       MB.sim.step(s, inputs);
       R.fx.consume(s.events, fxSettings(true));
+      MB.radio.events(app, s.events);
       for (var i = 0; i < s.events.length; i++) {
         var e = s.events[i];
         if (e.t === 'hit' && e.slot === app.slot) dmgLog.push([s.time, e.dmg]);
@@ -185,6 +192,7 @@
       } else if (IN.pressed('Escape') || IN.padPressed('start')) {
         app.pauseTab = 0; app.go('pause');
       } else stepRun(dt);
+      MB.radio.update(app, dt);
       app.bannerT = Math.max(0, app.bannerT - dt);
     } else if (ATTRACT_SCREENS[sc]) stepAttract(dt);
     var ws = worldState();
