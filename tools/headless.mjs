@@ -56,6 +56,10 @@ const run = name => wanted.length === 0 || wanted.includes(name);
 if (run('load')) {
   check('load: namespaces', MB.sim && MB.data && MB.bot && MB.rng);
   check('load: 8 archetypes, 42 items, 7 biomes', MB.data.ARCHETYPES.length === 8 && MB.data.ITEM_POOL.length === 42 && MB.data.BIOME_NAMES.length === 7);
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts.manifest.json'), 'utf8')).map(m => m.path);
+  const tags = [...fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8').matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
+  check('load: index.html script order matches the manifest', JSON.stringify(tags) === JSON.stringify(manifest), tags.length + ' tags');
+  check('load: every manifest file exists', manifest.every(p => fs.existsSync(path.join(ROOT, p))));
 }
 
 if (run('determinism')) {

@@ -7,7 +7,6 @@
   {"path": "js/render/icons.js", "env": "browser"},
   {"path": "js/render/fx.js", "env": "browser"},
   {"path": "js/render/render.js", "env": "browser"},
-  {"path": "js/audio/audio.js", "env": "browser"},
   {"path": "js/input/input.js", "env": "browser"},
   {"path": "js/ui/ui.js", "env": "browser"},
   {"path": "js/ui/screens.js", "env": "browser"},

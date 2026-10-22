@@ -474,6 +474,9 @@
     });
   }
 
+  // Other files add sprites here: S.register(key, w, h, drawFn) with drawFn(g) drawing centred on (0,0).
+  S.register = function (key, w, h, fn) { MISC[key] = [w, h, fn]; };
+
   function build(key) {
     var m;
     if ((m = /^char:(\d)$/.exec(key))) return bakeChar(+m[1]);
@@ -513,8 +516,16 @@
   /* ------------------------------------------------------------------ arena floors
    * Tileable 512px floor per biome, Brotato-style: soft mottled ground, scattered pebbles and tufts,
    * plus biome-specific debris. Built with a fixed-seed cosmetic RNG so it never touches sim state. */
+  // One look per district. Mid-dark tones so the outlined sprites pop, like Brotato's arenas.
   var FLOOR_DEF = {
-    _default: { base: '#5b4a5e', blot: ['#54445a', '#625166', '#4d3f53'], dots: '#6e5c72', deco: 'cables' }
+    'Neon Grid': { base: '#3b3f5c', deco: 'grid', line: '#5a6290', glow: '#4ff0d8' },
+    'Rain Alley': { base: '#3a4656', deco: 'puddles', tuft: '#56677a' },
+    'Dust Slums': { base: '#6b5640', deco: 'tufts', tuft: '#8a7350' },
+    'Vine Mesh': { base: '#33503f', deco: 'cables', cable: '#4f8a52', tuft: '#4d7a55' },
+    'Jetstream': { base: '#4a5263', deco: 'plates', line: '#5d6679' },
+    'Reactor Core': { base: '#55333a', deco: 'cracks', glow: '#ff7a3c' },
+    'Midnight District': { base: '#2c2840', deco: 'road', line: '#d8c060' },
+    _default: { base: '#4a3f55', deco: 'tufts' }
   };
   S.floorDefs = FLOOR_DEF;
   var floors = Object.create(null);
@@ -524,52 +535,114 @@
     var d = FLOOR_DEF[biome] || FLOOR_DEF._default;
     var N = 512, c = mk(N, N), g = c.getContext('2d');
     var r = MB.rng.make('floor:' + biome);
+    g.lineCap = 'round'; g.lineJoin = 'round';
     g.fillStyle = d.base; g.fillRect(0, 0, N, N);
-    function wrap(fn) { for (var ox = -N; ox <= N; ox += N) for (var oy = -N; oy <= N; oy += N) { g.save(); g.translate(ox, oy); fn(); g.restore(); } }
+    // draw fn at (x,y) and at its wrapped copies so the tile repeats seamlessly
+    function at(x, y, pad, fn) {
+      for (var ox = -1; ox <= 1; ox++) for (var oy = -1; oy <= 1; oy++) {
+        var X = x + ox * N, Y = y + oy * N;
+        if (X < -pad || X > N + pad || Y < -pad || Y > N + pad) continue;
+        g.save(); g.translate(X, Y); fn(); g.restore();
+      }
+    }
     var i;
-    for (i = 0; i < 70; i++) {
-      var bx = r.uniform(0, N), by = r.uniform(0, N), br = r.uniform(20, 70), col = r.choice(d.blot);
-      wrap(function () { g.fillStyle = col; g.beginPath(); g.ellipse(bx, by, br, br * r.uniform(0.5, 0.9), r.uniform(0, 3), 0, TAU); g.fill(); });
+    // soft mottling, low contrast
+    for (i = 0; i < 46; i++) {
+      (function (x, y, rr, rot, k) {
+        at(x, y, rr, function () { g.fillStyle = shade(d.base, k); g.beginPath(); g.ellipse(0, 0, rr, rr * 0.62, rot, 0, TAU); g.fill(); });
+      })(r.uniform(0, N), r.uniform(0, N), r.uniform(30, 80), r.uniform(0, 3), r.uniform(-0.07, 0.05));
     }
-    for (i = 0; i < 160; i++) {
-      var x = r.uniform(0, N), y = r.uniform(0, N), rr = r.uniform(1.2, 3.2);
-      wrap(function () { g.fillStyle = d.dots; g.beginPath(); g.arc(x, y, rr, 0, TAU); g.fill(); });
-    }
-    for (i = 0; i < 22; i++) { // pebbles with outline, Brotato-like
-      var px = r.uniform(0, N), py = r.uniform(0, N), pr = r.uniform(3, 7);
-      wrap(function () {
-        g.fillStyle = shade(d.base, -0.35); g.beginPath(); g.ellipse(px + 1, py + 2, pr, pr * 0.7, 0, 0, TAU); g.fill();
-        g.fillStyle = shade(d.base, 0.18); g.beginPath(); g.ellipse(px, py, pr, pr * 0.7, 0, 0, TAU); g.fill();
-      });
-    }
-    if (d.deco === 'tufts' || d.deco === 'cables') {
-      for (i = 0; i < 18; i++) {
-        var tx = r.uniform(0, N), ty = r.uniform(0, N), tc = d.tuft || shade(d.base, 0.25);
-        wrap(function () {
-          g.strokeStyle = tc; g.lineWidth = 2.4; g.lineCap = 'round';
-          for (var k = -1; k <= 1; k++) { g.beginPath(); g.moveTo(tx + k * 3, ty); g.lineTo(tx + k * 5, ty - 7 - (k === 0 ? 3 : 0)); g.stroke(); }
-        });
+    var line = d.line || shade(d.base, 0.12);
+    if (d.deco === 'grid') {
+      g.strokeStyle = line; g.lineWidth = 2;
+      for (i = 0; i <= N; i += 64) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i, N); g.moveTo(0, i); g.lineTo(N, i); g.stroke(); }
+      for (i = 0; i < 9; i++) {
+        (function (x, y) {
+          at(x, y, 40, function () {
+            g.fillStyle = rgba(d.glow, 0.18); g.fillRect(-30, -30, 60, 60);
+            g.strokeStyle = rgba(d.glow, 0.55); g.lineWidth = 2; g.strokeRect(-30, -30, 60, 60);
+          });
+        })(r.randint(0, 7) * 64 + 32, r.randint(0, 7) * 64 + 32);
       }
-    }
-    if (d.deco === 'cables') {
-      for (i = 0; i < 5; i++) {
-        var cx0 = r.uniform(0, N), cy0 = r.uniform(0, N), cx1 = cx0 + r.uniform(-140, 140), cy1 = cy0 + r.uniform(-140, 140);
-        var mx = (cx0 + cx1) / 2 + r.uniform(-50, 50), my = (cy0 + cy1) / 2 + r.uniform(-50, 50);
-        wrap(function () {
-          g.lineCap = 'round';
-          g.strokeStyle = shade(d.base, -0.4); g.lineWidth = 6; g.beginPath(); g.moveTo(cx0, cy0); g.quadraticCurveTo(mx, my, cx1, cy1); g.stroke();
-          g.strokeStyle = d.cable || shade(d.base, 0.1); g.lineWidth = 2.5; g.stroke();
-        });
+    } else if (d.deco === 'plates') {
+      g.strokeStyle = shade(d.base, -0.25); g.lineWidth = 3;
+      for (i = 0; i <= N; i += 128) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i, N); g.moveTo(0, i); g.lineTo(N, i); g.stroke(); }
+      for (var px = 0; px < N; px += 128) for (var py = 0; py < N; py += 128) {
+        g.fillStyle = shade(d.base, -0.18);
+        [[10, 10], [118, 10], [10, 118], [118, 118]].forEach(function (q) { g.beginPath(); g.arc(px + q[0], py + q[1], 3.5, 0, TAU); g.fill(); });
       }
-    }
-    if (d.deco === 'cracks') {
+      for (i = 0; i < 3; i++) { // vent grates
+        (function (x, y) {
+          at(x, y, 60, function () {
+            g.fillStyle = shade(d.base, -0.35); g.fillRect(-44, -28, 88, 56);
+            g.strokeStyle = shade(d.base, 0.15); g.lineWidth = 4;
+            for (var k = -36; k <= 36; k += 12) { g.beginPath(); g.moveTo(k, -20); g.lineTo(k, 20); g.stroke(); }
+            g.strokeStyle = OUT; g.lineWidth = 3; g.strokeRect(-44, -28, 88, 56);
+          });
+        })(r.randint(0, 3) * 128 + 64, r.randint(0, 3) * 128 + 64);
+      }
+    } else if (d.deco === 'road') {
+      g.fillStyle = shade(d.base, -0.12); g.fillRect(0, 196, N, 120);
+      g.fillStyle = d.line;
+      for (i = 0; i < N; i += 128) { g.save(); g.globalAlpha = 0.55; g.fillRect(i + 20, 252, 70, 8); g.restore(); }
+      g.strokeStyle = shade(d.base, 0.14); g.lineWidth = 4;
+      g.beginPath(); g.moveTo(0, 196); g.lineTo(N, 196); g.moveTo(0, 316); g.lineTo(N, 316); g.stroke();
+    } else if (d.deco === 'puddles') {
       for (i = 0; i < 10; i++) {
-        var kx = r.uniform(0, N), ky = r.uniform(0, N), pts = [[kx, ky]];
-        for (var s = 0; s < 4; s++) { var last = pts[pts.length - 1]; pts.push([last[0] + r.uniform(-22, 22), last[1] + r.uniform(-22, 22)]); }
-        wrap(function () {
-          g.strokeStyle = shade(d.base, -0.35); g.lineWidth = 2; g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
-          for (var q = 1; q < pts.length; q++) g.lineTo(pts[q][0], pts[q][1]); g.stroke();
+        (function (x, y, rr) {
+          at(x, y, rr + 10, function () {
+            g.fillStyle = shade(d.base, -0.2); g.beginPath(); g.ellipse(0, 0, rr, rr * 0.5, 0, 0, TAU); g.fill();
+            g.strokeStyle = rgba('#bcd6ff', 0.35); g.lineWidth = 2.5;
+            g.beginPath(); g.ellipse(-rr * 0.2, -rr * 0.12, rr * 0.5, rr * 0.18, 0, Math.PI * 1.1, Math.PI * 1.7); g.stroke();
+          });
+        })(r.uniform(0, N), r.uniform(0, N), r.uniform(18, 46));
+      }
+    } else if (d.deco === 'cracks') {
+      for (i = 0; i < 12; i++) {
+        var pts = [[0, 0]];
+        for (var s = 0; s < 5; s++) { var last = pts[pts.length - 1]; pts.push([last[0] + r.uniform(-26, 26), last[1] + r.uniform(-26, 26)]); }
+        (function (x, y, pts) {
+          at(x, y, 140, function () {
+            g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
+            for (var q = 1; q < pts.length; q++) g.lineTo(pts[q][0], pts[q][1]);
+            g.strokeStyle = shade(d.base, -0.45); g.lineWidth = 6; g.stroke();
+            g.strokeStyle = rgba(d.glow, 0.75); g.lineWidth = 2; g.stroke();
+          });
+        })(r.uniform(0, N), r.uniform(0, N), pts);
+      }
+    } else if (d.deco === 'cables') {
+      for (i = 0; i < 6; i++) {
+        (function (x, y, dx, dy, mx, my) {
+          at(x, y, 220, function () {
+            g.beginPath(); g.moveTo(0, 0); g.quadraticCurveTo(mx, my, dx, dy);
+            g.strokeStyle = shade(d.base, -0.4); g.lineWidth = 9; g.stroke();
+            g.strokeStyle = d.cable; g.lineWidth = 4.5; g.stroke();
+            g.fillStyle = shade(d.cable, 0.25);
+            g.beginPath(); g.ellipse(mx / 2 + dx / 4, my / 2 + dy / 4, 6, 3.5, 0.6, 0, TAU); g.fill();
+          });
+        })(r.uniform(0, N), r.uniform(0, N), r.uniform(-160, 160), r.uniform(-160, 160), r.uniform(-80, 80), r.uniform(-80, 80));
+      }
+    }
+    // scattered dots and outlined pebbles everywhere, Brotato-style
+    for (i = 0; i < 90; i++) {
+      (function (x, y, rr) { at(x, y, 4, function () { g.fillStyle = shade(d.base, 0.08); g.beginPath(); g.arc(0, 0, rr, 0, TAU); g.fill(); }); })(r.uniform(0, N), r.uniform(0, N), r.uniform(1.2, 2.6));
+    }
+    for (i = 0; i < 14; i++) {
+      (function (x, y, pr) {
+        at(x, y, 10, function () {
+          g.fillStyle = shade(d.base, -0.32); g.beginPath(); g.ellipse(1, 2, pr, pr * 0.7, 0, 0, TAU); g.fill();
+          g.fillStyle = shade(d.base, 0.16); g.beginPath(); g.ellipse(0, 0, pr, pr * 0.7, 0, 0, TAU); g.fill();
         });
+      })(r.uniform(0, N), r.uniform(0, N), r.uniform(3, 6.5));
+    }
+    if (d.tuft) {
+      for (i = 0; i < 16; i++) {
+        (function (x, y) {
+          at(x, y, 12, function () {
+            g.strokeStyle = d.tuft; g.lineWidth = 2.6;
+            for (var k = -1; k <= 1; k++) { g.beginPath(); g.moveTo(k * 3, 0); g.lineTo(k * 5, -7 - (k === 0 ? 3 : 0)); g.stroke(); }
+          });
+        })(r.uniform(0, N), r.uniform(0, N));
       }
     }
     return (floors[biome] = c);

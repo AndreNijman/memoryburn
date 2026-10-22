@@ -22,6 +22,7 @@
  *   - a Suicide enemy dies after it bursts (the original set hp=0 but kept it alive, so it re-burst every frame)
  *   - Junk Saint's pickup_add is applied (the original never read it)
  *   - clicking a shop card's lock no longer also buys the card
+ *   - Aegis enemies walk toward the player at 70% speed (the original had no aegis movement, so they never left the edge)
  *   - pets orbit on sim time instead of the wall clock; lifesteal, enemy phase and pickup scatter use the sim RNG
  */
 (function () {
@@ -253,6 +254,8 @@
         e.hp = 0; e.dead = true; // fix: the original kept the enemy alive here
         ev(state, { t: 'explode', x: e.x, y: e.y });
       }
+    } else if (et === 'aegis') { // fix: the original had no aegis branch, so shield bots froze on the arena edge
+      e.x += nx * (e.speed * 0.7) * dt; e.y += ny * (e.speed * 0.7) * dt;
     } else if (et === 'sentry') {
       e.shoot_cd -= dt;
       if (e.shoot_cd <= 0) {
