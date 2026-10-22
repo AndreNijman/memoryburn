@@ -112,25 +112,33 @@
     var i, p;
     shakeT = Math.max(0, shakeT - dt); if (shakeT <= 0) shakeMag = 0;
     if (fx.hurtFlash > 0) fx.hurtFlash = Math.max(0, fx.hurtFlash - dt);
-    for (i = parts.length - 1; i >= 0; i--) {
+    var n = 0, k60 = dt * 60, tk = Math.pow(0.88, k60);
+    for (i = 0; i < parts.length; i++) {
       p = parts[i];
       p.life -= dt;
-      if (p.life <= 0) { parts.splice(i, 1); continue; }
-      var k = Math.pow(p.drag, dt * 60);
+      if (p.life <= 0) continue;
+      var k = Math.pow(p.drag, k60);
       p.vx *= k; p.vy = p.vy * k + p.grav * dt;
       p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.spin * dt;
+      parts[n++] = p;
     }
-    for (i = texts.length - 1; i >= 0; i--) {
+    parts.length = n;
+    for (i = 0, n = 0; i < texts.length; i++) {
       var t = texts[i];
       t.life -= dt; t.pop += dt;
-      if (t.life <= 0) { texts.splice(i, 1); continue; }
-      t.y += t.vy * dt; t.vy *= Math.pow(0.88, dt * 60);
+      if (t.life <= 0) continue;
+      t.y += t.vy * dt; t.vy *= tk;
+      texts[n++] = t;
     }
-    for (i = tracers.length - 1; i >= 0; i--) { tracers[i].life -= dt; if (tracers[i].life <= 0) tracers.splice(i, 1); }
-    for (i = rings.length - 1; i >= 0; i--) { rings[i].life -= dt; if (rings[i].life <= 0) rings.splice(i, 1); }
-    for (i = decals.length - 1; i >= 0; i--) { decals[i].life -= dt; if (decals[i].life <= 0) decals.splice(i, 1); }
+    texts.length = n;
+    age(tracers, dt); age(rings, dt); age(decals, dt);
     updateWeather(dt, biome);
   };
+
+  function age(list, dt) { // drop expired entries in place, keeping order
+    for (var i = 0, n = 0; i < list.length; i++) { list[i].life -= dt; if (list[i].life > 0) list[n++] = list[i]; }
+    list.length = n;
+  }
 
   fx.shake = function () {
     if (shakeT <= 0 || shakeMag <= 0) return [0, 0];
@@ -152,6 +160,48 @@
     }
   };
 
+  /* Particles and damage numbers are blitted from small cached images instead of being filled and stroked
+   * as paths each frame; a busy wave has several hundred of them. */
+  var dotImgs = Object.create(null), chunkImgs = Object.create(null), textImgs = Object.create(null), textN = 0, fontOk = false;
+  var DOT_R = 8, IMG_RES = 2; // dots are baked at radius 8 and scaled; the 2px outline scales with them
+  function dotImg(col, outline) {
+    var key = col + (outline ? '+' : ''), c = dotImgs[key];
+    if (c) return c;
+    var e = (DOT_R + 2) * IMG_RES;
+    c = S.mkCanvas(e * 2, e * 2); var cg = c.getContext('2d');
+    cg.scale(IMG_RES, IMG_RES); cg.beginPath(); cg.arc(DOT_R + 2, DOT_R + 2, DOT_R, 0, TAU); cg.fillStyle = col; cg.fill();
+    if (outline) { cg.lineWidth = 2; cg.strokeStyle = P.OUT; cg.stroke(); }
+    return (dotImgs[key] = c);
+  }
+  function chunkImg(col) {
+    var c = chunkImgs[col];
+    if (c) return c;
+    var e = (DOT_R + 2) * IMG_RES;
+    c = S.mkCanvas(e * 2, e * 2); var cg = c.getContext('2d');
+    cg.scale(IMG_RES, IMG_RES); cg.translate(DOT_R + 2, DOT_R + 2);
+    cg.fillStyle = col; cg.fillRect(-DOT_R, -DOT_R * 0.7, DOT_R * 2, DOT_R * 1.4);
+    cg.lineWidth = 2; cg.strokeStyle = P.OUT; cg.strokeRect(-DOT_R, -DOT_R * 0.7, DOT_R * 2, DOT_R * 1.4);
+    return (chunkImgs[col] = c);
+  }
+  function textFont(size) { return size + 'px "Lilita One", system-ui, sans-serif'; }
+  // Outlined text baked at k device px per virtual px; null until the display font has loaded, so a
+  // fallback face never gets cached.
+  function textImg(str, col, size, k) {
+    if (!fontOk) { if (typeof document === 'undefined' || !document.fonts || !document.fonts.check(textFont(size))) return null; fontOk = true; }
+    var key = str + '|' + col + '|' + size + '|' + k, c = textImgs[key];
+    if (c) return c;
+    if (++textN > 400) { textImgs = Object.create(null); textN = 1; }
+    c = S.mkCanvas(1, 1); var cg = c.getContext('2d');
+    cg.font = textFont(size);
+    var w = Math.ceil(cg.measureText(str).width) + 12, h = Math.ceil(size * 1.3) + 12;
+    c.width = Math.ceil(w * k); c.height = Math.ceil(h * k);
+    cg.scale(k, k); cg.font = textFont(size); cg.textAlign = 'center'; cg.textBaseline = 'middle'; cg.lineJoin = 'round';
+    cg.lineWidth = 6; cg.strokeStyle = P.OUT; cg.strokeText(str, w / 2, h / 2);
+    cg.fillStyle = col; cg.fillText(str, w / 2, h / 2);
+    c.vw = w; c.vh = h;
+    return (textImgs[key] = c);
+  }
+
   // Top layer: particles, rings, tracers, damage numbers.
   fx.drawTop = function (g) {
     var i;
@@ -162,19 +212,20 @@
       g.lineWidth = 5 * (1 - t) + 1; g.strokeStyle = r.col; g.beginPath(); g.arc(r.x, r.y, rad, 0, TAU); g.stroke();
       g.restore();
     }
+    var m = g.getTransform(), ma = m.a, mb = m.b, mc = m.c, md = m.d, me = m.e, mf = m.f, E = DOT_R + 2;
     for (i = 0; i < parts.length; i++) {
-      var p = parts[i], f = p.life / p.max, rr = p.r * (1 + p.grow * (1 - f));
+      var p = parts[i], f = p.life / p.max, rr = p.r * (1 + p.grow * (1 - f)), q = rr / DOT_R;
       g.globalAlpha = Math.min(1, f * 1.6);
-      if (p.shape === 'chunk') {
-        g.save(); g.translate(p.x, p.y); g.rotate(p.rot);
-        g.fillStyle = p.col; g.fillRect(-rr, -rr * 0.7, rr * 2, rr * 1.4);
-        g.lineWidth = 2; g.strokeStyle = P.OUT; g.strokeRect(-rr, -rr * 0.7, rr * 2, rr * 1.4);
-        g.restore();
+      if (p.shape === 'chunk') { // rotate about the particle: base * translate(x,y) * rotate(rot) * scale(q)
+        var cs = Math.cos(p.rot) * q, sn = Math.sin(p.rot) * q;
+        g.setTransform(ma * cs + mc * sn, mb * cs + md * sn, mc * cs - ma * sn, md * cs - mb * sn, ma * p.x + mc * p.y + me, mb * p.x + md * p.y + mf);
+        g.drawImage(chunkImg(p.col), -E, -E, E * 2, E * 2);
       } else {
-        g.beginPath(); g.arc(p.x, p.y, rr, 0, TAU); g.fillStyle = p.col; g.fill();
-        if (p.outline) { g.lineWidth = 2; g.strokeStyle = P.OUT; g.stroke(); }
+        g.setTransform(ma, mb, mc, md, me, mf);
+        g.drawImage(dotImg(p.col, p.outline), p.x - E * q, p.y - E * q, E * 2 * q, E * 2 * q);
       }
     }
+    g.setTransform(ma, mb, mc, md, me, mf);
     g.globalAlpha = 1;
     g.lineCap = 'round';
     for (i = 0; i < tracers.length; i++) {
@@ -184,11 +235,14 @@
     }
     g.globalAlpha = 1;
     g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+    var tk = Math.ceil(S.zoom * 1.2 * 2) / 2; // bake at the largest pop scale so it never upscales
     for (i = 0; i < texts.length; i++) {
       var tx = texts[i], sc = tx.pop < 0.08 ? 0.6 + tx.pop / 0.08 * 0.6 : Math.max(1, 1.2 - (tx.pop - 0.08) * 2);
-      g.save(); g.translate(tx.x, tx.y); g.scale(sc, sc);
       g.globalAlpha = Math.min(1, tx.life / tx.max * 2.5);
-      g.font = tx.size + 'px "Lilita One", system-ui, sans-serif';
+      var ti = textImg(tx.str, tx.col, tx.size, tk);
+      if (ti) { g.drawImage(ti, tx.x - ti.vw * sc / 2, tx.y - ti.vh * sc / 2, ti.vw * sc, ti.vh * sc); continue; }
+      g.save(); g.translate(tx.x, tx.y); g.scale(sc, sc);
+      g.font = textFont(tx.size);
       g.lineWidth = 6; g.strokeStyle = P.OUT; g.strokeText(tx.str, 0, 0);
       g.fillStyle = tx.col; g.fillText(tx.str, 0, 0);
       g.restore();

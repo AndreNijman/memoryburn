@@ -10,6 +10,8 @@
  *   MB.sprites.has(key)
  *   MB.sprites.floor(biome) -> canvas     tileable arena floor for a biome id
  *   MB.sprites.palette                    shared colours (OUT outline etc)
+ *   MB.sprites.zoom                       device pixels per virtual pixel, set by the main loop each frame;
+ *                                         draw() picks a half-size copy when the full bake would be shrunk a lot
  *
  * Keys: char:<0..7>, gun:<0..7>, enemy:<kind>, pickup:<mat|xp|heal>, pet:<kind>, bullet:<hex>, ebullet,
  *       portal, spawnmark, shadow, crate, icon:<stat>
@@ -590,19 +592,35 @@
     g.globalCompositeOperation = 'source-atop'; g.fillStyle = '#ffffff'; g.fillRect(0, 0, c.width, c.height);
     return (s.flash = c);
   }
+  // Half-resolution copy, downsampled once with high-quality smoothing. Drawing a 2x bake at ~0.5x every
+  // frame needs 'high' smoothing to stay clean, and that is the single most expensive thing the CPU
+  // rasteriser does here; a pre-shrunk copy looks the same under cheap bilinear filtering.
+  function halfOf(src) {
+    var c = mk(src.width / 2, src.height / 2), g = c.getContext('2d');
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+    g.drawImage(src, 0, 0, c.width, c.height);
+    return c;
+  }
+  function pick(s, flash, k) {
+    if (k >= 0.75) return flash ? flashOf(s) : s.c;
+    if (flash) return s.flashHalf || (s.flashHalf = halfOf(flashOf(s)));
+    return s.half || (s.half = halfOf(s.c));
+  }
+  S.zoom = 1;
 
   S.draw = function (ctx, key, x, y, o) {
     var s = S.get(key);
     if (!s) return;
     o = o || {};
     var sc = o.scale || 1, sx = (o.sx || 1) * sc * (o.flip ? -1 : 1), sy = (o.sy || 1) * sc;
+    var k = S.zoom * Math.max(Math.abs(sx), Math.abs(sy)) / RES; // device px per baked px
     ctx.save();
     ctx.translate(x, y);
     if (o.rot) ctx.rotate(o.rot);
     ctx.scale(sx, sy);
     if (o.alpha != null) ctx.globalAlpha *= o.alpha;
-    ctx.drawImage(s.c, -s.w / 2, -s.h / 2, s.w, s.h);
-    if (o.flash > 0) { ctx.globalAlpha *= Math.min(1, o.flash); ctx.drawImage(flashOf(s), -s.w / 2, -s.h / 2, s.w, s.h); }
+    ctx.drawImage(pick(s, false, k), -s.w / 2, -s.h / 2, s.w, s.h);
+    if (o.flash > 0) { ctx.globalAlpha *= Math.min(1, o.flash); ctx.drawImage(pick(s, true, k), -s.w / 2, -s.h / 2, s.w, s.h); }
     ctx.restore();
   };
 

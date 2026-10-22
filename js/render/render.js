@@ -26,29 +26,45 @@
     state.players.forEach(function (p) { m['p' + p.slot] = [p.x, p.y]; p.pets.forEach(function (pt, i) { m['t' + p.slot + '_' + i] = [pt.x, pt.y]; }); });
     return m;
   };
-  function lerpPos(prev, key, x, y, a) {
+  var LX = 0, LY = 0; // lerp() writes here instead of returning a fresh array per entity per frame
+  function lerp(prev, key, x, y, a) {
     var o = prev && prev[key];
-    if (!o) return [x, y];
-    return [o[0] + (x - o[0]) * a, o[1] + (y - o[1]) * a];
+    if (!o) { LX = x; LY = y; return; }
+    LX = o[0] + (x - o[0]) * a; LY = o[1] + (y - o[1]) * a;
   }
 
-  var patterns = new WeakMap();
-  function floorPattern(g, biome) {
-    var m = patterns.get(g);
-    if (!m) { m = {}; patterns.set(g, m); }
-    if (!m[biome]) m[biome] = g.createPattern(S.floor(biome), 'repeat');
-    return m[biome];
-  }
-
-  R.drawFloor = function (g, biome) {
-    g.fillStyle = floorPattern(g, biome);
-    g.fillRect(-40, -40, W + 80, H + 80); // overdraw so screen shake never reveals the letterbox
+  // The floor, rim vignette and border never change within a wave, so they are painted once into a
+  // device-resolution canvas and copied 1:1 each frame. Filling a scaled 512px pattern plus a full-screen
+  // radial gradient every frame was the most expensive thing on screen.
+  var PAD = 40; // overdraw so screen shake never reveals the letterbox
+  var floorCache = { key: '', c: null };
+  function paintFloor(g, biome) {
+    g.fillStyle = g.createPattern(S.floor(biome), 'repeat');
+    g.fillRect(-PAD, -PAD, W + PAD * 2, H + PAD * 2);
     // arena rim: darker edge band with an outlined inner border, like Brotato's walls
     var v = g.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 1.05);
     v.addColorStop(0, 'rgba(10,6,16,0)'); v.addColorStop(1, 'rgba(10,6,16,0.55)');
     g.fillStyle = v; g.fillRect(0, 0, W, H);
     g.lineWidth = 10; g.strokeStyle = 'rgba(28,22,34,0.85)'; g.strokeRect(5, 5, W - 10, H - 10);
     g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,0.08)'; g.strokeRect(12, 12, W - 24, H - 24);
+  }
+  R.drawFloor = function (g, biome) {
+    var m = g.getTransform();
+    if (m.b || m.c) { paintFloor(g, biome); return; } // rotated: no cache
+    var k = m.a, key = biome + '@' + k.toFixed(4);
+    if (floorCache.key !== key) {
+      var c = floorCache.c || S.mkCanvas(1, 1);
+      c.width = Math.ceil((W + PAD * 2) * k); c.height = Math.ceil((H + PAD * 2) * k);
+      var fg = c.getContext('2d');
+      fg.imageSmoothingEnabled = true; fg.imageSmoothingQuality = 'high';
+      fg.setTransform(k, 0, 0, k, PAD * k, PAD * k);
+      paintFloor(fg, biome);
+      floorCache.key = key; floorCache.c = c;
+    }
+    g.save();
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.drawImage(floorCache.c, Math.round(m.e - PAD * k), Math.round(m.f - PAD * k));
+    g.restore();
   };
 
   function drawShadow(g, x, y, w) { S.draw(g, 'shadow', x, y, { sx: w / 56, sy: w / 56 }); }
@@ -121,10 +137,26 @@
     }
   }
 
+  // Radial vignette from transparent at r0 to opaque `rgb` at r1, centred in a w x h box, baked at 1/div size.
+  var glows = Object.create(null);
+  function glow(key, w, h, r0, r1, rgb, div) {
+    if (glows[key]) return glows[key];
+    var c = S.mkCanvas(w / div, h / div), cg = c.getContext('2d');
+    cg.scale(1 / div, 1 / div);
+    var gr = cg.createRadialGradient(w / 2, h / 2, r0, w / 2, h / 2, r1);
+    gr.addColorStop(0, 'rgba(' + rgb + ',0)'); gr.addColorStop(1, 'rgba(' + rgb + ',1)');
+    cg.fillStyle = gr; cg.fillRect(0, 0, w, h);
+    return (glows[key] = c);
+  }
+
+  var pool = [], actors = []; // y-sort records reused across frames
+  function actor(i, x, y, k, o) { var r = pool[i] || (pool[i] = {}); r.x = x; r.y = y; r.k = k; r.o = o; actors[i] = r; }
+  function byY(u, v) { return u.y - v.y; }
+
   var bossArt = 0, bossId = null, bossOf = null; // the first overlord of a boss contract is the named boss
   R.world = function (g, state, prev, a, t, opts) {
     opts = opts || {};
-    var i, pos, ct = MB.data.STORY.contract(state.wave), key = state.seed + ':' + state.wave;
+    var i, ct = MB.data.STORY.contract(state.wave), key = state.seed + ':' + state.wave;
     bossArt = ct && ct.boss ? ct.boss.art : 0;
     if (bossOf !== key) { bossOf = key; bossId = null; }
     if (bossArt && bossId == null) state.enemies.forEach(function (e) { if (e.etype === 'overlord' && bossId == null) bossId = e.id; });
@@ -134,18 +166,19 @@
     // pickups
     for (i = 0; i < state.pickups.length; i++) {
       var q = state.pickups[i];
-      pos = lerpPos(prev, 'k' + q.id, q.x, q.y, a);
+      lerp(prev, 'k' + q.id, q.x, q.y, a);
       var bob = Math.sin(t * 5 + q.id) * 3;
-      drawShadow(g, pos[0], pos[1] + 9, 20);
-      S.draw(g, 'pickup:' + q.kind, pos[0], pos[1] - 4 + bob, { scale: q.kind === 'mat' ? 0.95 : 0.9, rot: q.kind === 'xp' ? Math.sin(t * 3 + q.id) * 0.3 : 0 });
+      drawShadow(g, LX, LY + 9, 20);
+      S.draw(g, 'pickup:' + q.kind, LX, LY - 4 + bob, { scale: q.kind === 'mat' ? 0.95 : 0.9, rot: q.kind === 'xp' ? Math.sin(t * 3 + q.id) * 0.3 : 0 });
     }
 
     // y-sorted actors
-    var actors = [];
-    state.enemies.forEach(function (e) { var p2 = lerpPos(prev, 'e' + e.id, e.x, e.y, a); actors.push({ y: p2[1], k: 0, o: e, x: p2[0] }); });
-    state.players.forEach(function (p) { if (!p.alive) return; var p2 = lerpPos(prev, 'p' + p.slot, p.x, p.y, a); actors.push({ y: p2[1], k: 1, o: p, x: p2[0] }); });
-    actors.sort(function (u, v) { return u.y - v.y; });
-    for (i = 0; i < actors.length; i++) {
+    var na = 0;
+    for (i = 0; i < state.enemies.length; i++) { var e0 = state.enemies[i]; lerp(prev, 'e' + e0.id, e0.x, e0.y, a); actor(na++, LX, LY, 0, e0); }
+    for (i = 0; i < state.players.length; i++) { var p0 = state.players[i]; if (!p0.alive) continue; lerp(prev, 'p' + p0.slot, p0.x, p0.y, a); actor(na++, LX, LY, 1, p0); }
+    actors.length = na;
+    actors.sort(byY);
+    for (i = 0; i < na; i++) {
       var ac = actors[i];
       if (ac.k === 0) drawEnemy(g, ac.o, ac.x, ac.y, t);
       else drawPlayer(g, ac.o, ac.x, ac.y, t, { rangeRing: opts.rangeRing && ac.o.slot === opts.localSlot, hurt: ac.o.slot === opts.localSlot && R.fx.hurtFlash > 0.25, label: state.players.length > 1 ? 'P' + (ac.o.slot + 1) : null });
@@ -155,52 +188,53 @@
     state.players.forEach(function (p) {
       if (!p.alive) return;
       p.pets.forEach(function (pt, k) {
-        var pp = lerpPos(prev, 't' + p.slot + '_' + k, pt.x, pt.y, a);
+        lerp(prev, 't' + p.slot + '_' + k, pt.x, pt.y, a);
         var hov = Math.sin(t * 4 + k) * 4;
-        drawShadow(g, pp[0], pp[1] + 22, 24);
-        S.draw(g, 'pet:' + pt.kind, pp[0], pp[1] - 10 + hov, { scale: 1.05, flip: pt.kind === 'turret_buddy' && Math.cos(pt.ang || 0) < 0 });
+        drawShadow(g, LX, LY + 22, 24);
+        S.draw(g, 'pet:' + pt.kind, LX, LY - 10 + hov, { scale: 1.05, flip: pt.kind === 'turret_buddy' && Math.cos(pt.ang || 0) < 0 });
       });
     });
 
     // bullets
     for (i = 0; i < state.bullets.length; i++) {
       var b = state.bullets[i];
-      pos = lerpPos(prev, 'b' + b.id, b.x, b.y, a);
+      lerp(prev, 'b' + b.id, b.x, b.y, a);
       var ang = Math.atan2(b.vy, b.vx), s = b.r / 6;
-      if (b.kind === 'ion') S.draw(g, 'bullet:' + b.color, pos[0], pos[1], { rot: ang, scale: s, sx: 2.0 });
-      else S.draw(g, 'bullet:' + b.color, pos[0], pos[1], { rot: ang, scale: s, sx: b.kind === 'spike' ? 1.5 : 1 });
+      if (b.kind === 'ion') S.draw(g, 'bullet:' + b.color, LX, LY, { rot: ang, scale: s, sx: 2.0 });
+      else S.draw(g, 'bullet:' + b.color, LX, LY, { rot: ang, scale: s, sx: b.kind === 'spike' ? 1.5 : 1 });
     }
     for (i = 0; i < state.ebullets.length; i++) {
       var eb = state.ebullets[i];
-      pos = lerpPos(prev, 'q' + eb.id, eb.x, eb.y, a);
-      S.draw(g, 'ebullet', pos[0], pos[1], { scale: 1 + Math.sin(t * 20 + eb.id) * 0.08 });
+      lerp(prev, 'q' + eb.id, eb.x, eb.y, a);
+      S.draw(g, 'ebullet', LX, LY, { scale: 1 + Math.sin(t * 20 + eb.id) * 0.08 });
     }
 
     R.fx.drawTop(g);
     R.fx.drawWeather(g, state.biome, state);
 
-    // district lighting
+    // district lighting; the gradients are baked once at low resolution (they are smooth, so upscaling is
+    // invisible) and composited with globalAlpha instead of being rebuilt every frame
     var b0 = D.BIOMES[state.biome];
     if (b0.dim) {
-      var lp = state.players.filter(function (p) { return p.alive; })[0];
+      var lp = null;
+      for (i = 0; i < state.players.length && !lp; i++) if (state.players[i].alive) lp = state.players[i];
       if (lp) {
-        var pp0 = lerpPos(prev, 'p' + lp.slot, lp.x, lp.y, a);
-        var gr = g.createRadialGradient(pp0[0], pp0[1], 120, pp0[0], pp0[1], 900);
-        gr.addColorStop(0, 'rgba(6,4,14,0)'); gr.addColorStop(1, 'rgba(6,4,14,' + (b0.dim * 2.4) + ')');
-        g.fillStyle = gr; g.fillRect(0, 0, W, H);
+        lerp(prev, 'p' + lp.slot, lp.x, lp.y, a);
+        g.globalAlpha = Math.min(1, b0.dim * 2.4);
+        g.drawImage(glow('dim', W * 2, H * 2, 120, 900, '6,4,14', 8), LX - W, LY - H, W * 2, H * 2); // big enough to cover the arena from any spot
+        g.globalAlpha = 1;
       }
     }
     if (b0.hp_drain) {
-      var pulse = 0.12 + Math.sin(t * 2) * 0.05;
-      var rg = g.createRadialGradient(W / 2, H / 2, H * 0.4, W / 2, H / 2, H);
-      rg.addColorStop(0, 'rgba(255,60,40,0)'); rg.addColorStop(1, 'rgba(255,60,40,' + pulse + ')');
-      g.fillStyle = rg; g.fillRect(0, 0, W, H);
+      g.globalAlpha = 0.12 + Math.sin(t * 2) * 0.05;
+      g.drawImage(glow('drain', W, H, H * 0.4, H, '255,60,40', 4), 0, 0, W, H);
+      g.globalAlpha = 1;
     }
     if (state.jungleSlow < 1) { g.fillStyle = 'rgba(80,220,120,0.08)'; g.fillRect(0, 0, W, H); }
     if (R.fx.hurtFlash > 0) {
-      var hg = g.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.9);
-      hg.addColorStop(0, 'rgba(239,77,95,0)'); hg.addColorStop(1, 'rgba(239,77,95,' + (R.fx.hurtFlash * 1.2) + ')');
-      g.fillStyle = hg; g.fillRect(0, 0, W, H);
+      g.globalAlpha = Math.min(1, R.fx.hurtFlash * 1.2);
+      g.drawImage(glow('hurt', W, H, H * 0.3, H * 0.9, '239,77,95', 4), 0, 0, W, H);
+      g.globalAlpha = 1;
     }
   };
 })();

@@ -16,7 +16,8 @@
   var KEY = 'memoryburn.settings.v1';
   var DEFAULTS = {
     manualFire: false, aimAssist: false, shake: true, tracers: true, dmgNums: true, reducedFlashes: false, rangeRing: true,
-    uiScale: 100, textSize: 100, vfx: 100, gameSpeed: 100, dmgTaken: 100, fpsCap: 0, skipStory: false, radio: true
+    uiScale: 100, textSize: 100, vfx: 100, gameSpeed: 100, dmgTaken: 100, fpsCap: 0, skipStory: false, radio: true,
+    resolution: 0 // % of native pixels; 0 = Auto (drops when frames run slow)
   };
   function loadSettings() {
     var s = {}, k;
@@ -211,7 +212,8 @@
     g.setTransform(v.scale, 0, 0, v.scale, v.ox, v.oy);
     g.save();
     g.beginPath(); g.rect(0, 0, W, H); g.clip();
-    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'low'; // sprites carry pre-shrunk copies (sprites.js halfOf)
+    MB.sprites.zoom = v.scale;
     var ws = worldState();
     if (ws) {
       var att = ATTRACT_SCREENS[app.screen];
@@ -229,8 +231,22 @@
     g.restore();
   }
 
+  // Auto resolution: render at native pixels (DPR capped at 2) until frames run slow, then step the
+  // backing store down, and back up once there is headroom again. Canvas fill rate is what limits weak
+  // GPUs and software rendering, so this is the one knob that always helps.
+  var autoK = 1, slowT = 0, fastT = 0, ema = 1 / 60, upWait = 8; // upWait doubles on every drop so it can't flap
+  function autoRes(raw) {
+    if (raw > 0.25) return; // tab switch or hitch, not a load signal
+    ema += (raw - ema) * 0.08;
+    var cap = app.settings.fpsCap, target = cap > 0 ? Math.max(1 / 60, 1 / cap) : 1 / 60;
+    if (ema > target * 1.22) { slowT += raw; fastT = 0; } else if (ema < target * 1.08) { fastT += raw; slowT = 0; } else { slowT = 0; fastT = 0; }
+    if (slowT > 1.2 && autoK > 0.5) { autoK = Math.max(0.5, autoK - 0.15); slowT = 0; ema = target; upWait = Math.min(120, upWait * 2); }
+    else if (fastT > upWait && autoK < 1) { autoK = Math.min(1, autoK + 0.1); fastT = 0; }
+  }
+  app.renderScale = function () { return app.settings.resolution > 0 ? app.settings.resolution / 100 : autoK; };
+
   function resize() {
-    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var dpr = Math.min(window.devicePixelRatio || 1, 2) * app.renderScale();
     var cw = Math.max(1, Math.round(window.innerWidth * dpr)), ch = Math.max(1, Math.round(window.innerHeight * dpr));
     if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
     var s = Math.min(cw / W, ch / H);
@@ -247,6 +263,7 @@
     var dt = Math.min(0.1, raw);
     fpsAcc += raw; fpsN++;
     if (fpsAcc >= 0.5) { app.fps = Math.round(fpsN / fpsAcc); fpsAcc = 0; fpsN = 0; }
+    if (app.settings.resolution === 0 && app.screen === 'play') autoRes(raw);
     resize();
     IN.poll();
     update(dt);

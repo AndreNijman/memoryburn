@@ -52,7 +52,7 @@ js/ui/radio.js           in-wave radio chatter driven by the script and sim even
 js/main.js               fixed-step loop, screen state machine, settings
 docs/story.md            story bible: premise, cast, reveal order, rules for new lines
 reference/               recovered original source and the bytecode checker used to verify it
-tools/                   headless tests, browser playtest, screenshot helper, sprite sheet
+tools/                   headless tests, browser playtest, benchmark, screenshot helper, sprite sheet
 ```
 
 ### Ready for multiplayer
@@ -70,7 +70,10 @@ The sim is written so that a host-authoritative online mode (the model broIsAPot
 node tools/headless.mjs      # sim: determinism, bot runs, all 8 characters, 4-player co-op, shop, story data, snapshots
 node tools/playtest.mjs      # browser: real clicks and keys through menu > story > run > pause > shop > briefing > ending > game over
 node tools/shot.mjs 'index.html?screen=shop' out.png 1920 1080   # screenshot
+node tools/bench.mjs         # frame rate and per-system JS cost in a crowded wave 12 (flags in the file header)
 ```
+
+Headless Chromium draws the canvas on the CPU, so the bench's fps is a worst case. Add `BENCH_ARGS='--disable-gpu-vsync --disable-frame-rate-limit'` to measure uncapped, or `BENCH_ARGS='--headless=new --enable-gpu --ignore-gpu-blocklist'` to use the GPU.
 
 The browser tools use Playwright. If it isn't installed here, they borrow it from `../tree/node_modules`.
 
@@ -113,6 +116,18 @@ These are original behaviours. They change the balance but aren't crashes, so th
 - Procedural sprites and per-district floors, weather and lighting.
 - A shop stats panel and per-card stat previews, computed by applying the item to a copy of the player with the real game code.
 - Gamepad and keyboard menu navigation.
+- A Resolution option. On Auto, the game renders at native resolution and lowers it when frames run slow.
+
+### Performance
+
+On the CPU renderer, a crowded wave 12 went from 17 fps to about 53 fps uncapped at 1080p, with the same picture. The changes:
+
+- The floor, rim vignette and border are drawn once per district into a canvas at screen resolution, then copied 1:1 each frame.
+- Each sprite has a half-size copy, made once with high-quality filtering. Sprites then draw with cheap bilinear filtering, which removes the per-frame cost of 'high' smoothing.
+- Particles and damage numbers draw from small cached images, not from paths and stroked text.
+- District lighting and the hurt flash use gradients baked once at low resolution.
+- The render loop reuses its sort records and interpolated positions instead of allocating them every frame. Effect lists are compacted in place.
+- The sim removes dead enemies in one pass per step, not once per bullet hit. Run hashes are unchanged.
 - Settings saved in the browser.
 - A menu background where the autopilot plays the game.
 - Co-op-ready game rules (see above).

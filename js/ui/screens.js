@@ -94,6 +94,9 @@
     s.gameSpeed = UI.slider('o:speed', 'Game Speed', s.gameSpeed, 60, 120, 5, x2, yy, colW, pct); yy += step;
     s.dmgTaken = UI.slider('o:taken', 'Damage Taken', s.dmgTaken, 50, 150, 5, x2, yy, colW, pct); yy += step;
     s.fpsCap = UI.slider('o:fps', 'FPS Cap', s.fpsCap, 0, 240, 10, x2, yy, colW, function (v) { return v === 0 ? 'Vsync' : String(v); }); yy += step;
+    var res = UI.slider('o:res', 'Resolution', s.resolution, 0, 100, 10, x2, yy, colW, function (v) { return v === 0 ? 'Auto' : v + '%'; }); yy += step;
+    if (res > 0 && res < 40) res = res > s.resolution ? 40 : 0; // 0 is Auto; below 40% is unplayable
+    s.resolution = res;
     s.skipStory = UI.toggle('o:story', 'Skip Story', s.skipStory, x2, yy, colW); yy += step;
     app.applySettings();
   }
