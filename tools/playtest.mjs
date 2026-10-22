@@ -22,6 +22,8 @@ let failures = 0;
 const check = (name, ok, detail) => { if (!ok) failures++; console.log((ok ? 'PASS ' : 'FAIL ') + name + (detail != null ? '  (' + detail + ')' : '')); };
 const screen = () => page.evaluate(() => MB.app.screen);
 const sim = f => page.evaluate(f);
+const song = () => page.evaluate(() => { const m = MB.audio.stats().music; return m ? m.id : null; });
+const audio = () => page.evaluate(() => MB.audio.stats());
 const wait = ms => page.waitForTimeout(ms);
 async function until(fn, ms = 4000) { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (await fn()) return true; await wait(50); } return false; }
 async function click(x, y) { await page.mouse.move(x, y); await wait(60); await page.mouse.down(); await wait(40); await page.mouse.up(); await wait(120); }
@@ -33,11 +35,17 @@ await wait(300);
 
 await click(960, 726);                       // Start Run
 check('menu -> chars', (await screen()) === 'chars', await screen());
+check('audio: the first click starts the AudioContext', await until(async () => (await audio()).ctx === 'running'), (await audio()).ctx);
+check('audio: menu theme plays', (await song()) === 'menu', await song());
 await click(300, 330);                       // first character card (Netrunner)
 check('chars -> difficulty', (await screen()) === 'difficulty', await screen());
 await click(590, 580);                       // Normal
 check('difficulty -> intro story', (await screen()) === 'intro', await screen());
 await shot('pt_intro');
+check('audio: story theme under the intro', (await song()) === 'story', await song());
+const played0 = (await audio()).played;
+await wait(600);
+check('audio: dialogue blips while the text types', (await audio()).played > played0, (await audio()).played - played0 + ' sounds');
 for (let i = 0; i < 12 && (await screen()) === 'intro'; i++) { await page.keyboard.press('Space'); await wait(150); }
 check('intro -> play', (await screen()) === 'play', await screen());
 check('run: Netrunner on Normal', await sim(() => MB.app.sim.players[0].arch === 0 && MB.app.sim.difficulty === 'Normal'));
@@ -53,12 +61,16 @@ await page.keyboard.up('KeyA');
 await wait(1500);
 check('play: auto-fire shoots something', await sim(() => MB.app.sim.kills > 0 || MB.app.sim.bullets.length > 0), await sim(() => MB.app.sim.kills + ' kills'));
 await shot('pt_play');
+const a1 = await audio();
+check('audio: the fight plays the district theme and ambience', a1.music && a1.music.id === 'neon' && a1.ambience === 'Neon Grid', JSON.stringify(a1.music) + ' ' + a1.ambience);
+check('audio: gunfire and hits make sound', a1.played > played0 + 5, a1.played + ' played, ' + a1.skipped + ' rate-limited, ' + a1.dropped + ' dropped');
 
 // pause and resume
 await page.keyboard.press('Escape'); await wait(120);
 check('Esc -> pause', (await screen()) === 'pause');
 const tick = await sim(() => MB.app.sim.tick); await wait(300);
 check('pause freezes the sim', (await sim(() => MB.app.sim.tick)) === tick);
+check('audio: pause muffles the mix', (await audio()).cut < 1000, (await audio()).cut);
 await click(960 - 300, 212);                 // Options tab
 await shot('pt_pause_options');
 await click(960 + 300 * 0 + 0, 212);         // Legend tab
@@ -69,6 +81,7 @@ check('Esc -> play', (await screen()) === 'play');
 // debug skip to the shop
 await page.keyboard.press('Digit8'); await wait(200);
 check('debug 8 -> shop', (await screen()) === 'shop', await screen());
+check('audio: market theme in the shop', (await song()) === 'shop', await song());
 await page.keyboard.press('Digit9'); await wait(100);
 const cash0 = await sim(() => MB.app.sim.players[0].cash);
 check('debug 9 adds eddies', cash0 >= 100, cash0);
@@ -89,6 +102,7 @@ await shot('pt_briefing');
 await page.keyboard.press('Space'); await wait(200);
 check('preview -> play wave 2', (await screen()) === 'play' && (await sim(() => MB.app.sim.wave)) === 2, await screen());
 check('districts follow the campaign', (await sim(() => MB.app.sim.biome)) === 'Rain Alley', await sim(() => MB.app.sim.biome));
+check('audio: Rain Alley has its own theme', (await song()) === 'rain', await song());
 await wait(3200);
 check('radio plays the contract line', await until(async () => sim(() => { const c = MB.radio.current(); return !!c && c.line === MB.data.STORY.contracts[2].radio[0][1]; }), 8000), await sim(() => JSON.stringify(MB.radio.current()))); // a side-job bark can play first
 await shot('pt_radio');
@@ -105,6 +119,7 @@ await until(async () => sim(() => MB.app.sim.enemies.some(e => e.etype === 'over
 await sim(() => { MB.app.sim.players[0].hp = MB.app.sim.players[0].max_hp; });
 await wait(400);
 await shot('pt_boss');
+check('audio: the boss theme takes over on the next bar', await until(async () => (await song()) === 'boss', 3000), await song());
 await sim(() => { const s = MB.app.sim, p = s.players[0], e = s.enemies.find(x => x.etype === 'overlord'); e.hp = 1; e.x = p.x + 90; e.y = p.y; });
 check('boss death plays its radio line', await until(async () => sim(() => { const c = MB.radio.current(); return !!c && c.line === MB.data.STORY.contracts[15].boss.down; }), 4000));
 await page.keyboard.press('Digit8'); await wait(300);
@@ -115,6 +130,7 @@ check('ending: choice is offered', (await sim(() => MB.app.ending.stage)) === 'c
 await shot('pt_ending_choice');
 await click(1260, 685);                      // Smash it
 check('ending: smash picks the smash epilogue', (await sim(() => MB.app.ending.choice)) === 'smash');
+check('audio: the smash epilogue has its own theme', (await song()) === 'smash', await song());
 for (let i = 0; i < 10 && (await sim(() => MB.app.ending.stage)) === 'epilogue'; i++) { await page.keyboard.press('Space'); await wait(150); }
 check('ending: epilogue -> campaign clear', (await sim(() => MB.app.ending.stage)) === 'done');
 await shot('pt_ending_done');
@@ -129,6 +145,7 @@ await sim(() => { const p = MB.app.sim.players[0]; MB.app.sim.biome = 'Neon Grid
 check('death -> gameover', await until(async () => (await screen()) === 'gameover', 4000), await screen());
 await wait(800);
 await shot('pt_gameover');
+check('audio: game over plays Flatline', (await song()) === 'flatline', await song());
 await click(1185, 865);                      // Menu
 check('gameover -> menu', (await screen()) === 'menu', await screen());
 
@@ -139,6 +156,7 @@ await until(async () => (await page.evaluate(() => window.MB && MB.app && MB.app
 check('settings persist across reload', (await sim(() => MB.app.settings.vfx)) === 75);
 await sim(() => { localStorage.clear(); });
 
+check('audio: volume settings exist and persist', (await sim(() => [MB.app.settings.masterVol, MB.app.settings.musicVol, MB.app.settings.sfxVol].every(v => typeof v === 'number'))));
 check('no page errors', errors.length === 0, errors.join(' | '));
 await browser.close();
 console.log(failures ? failures + ' failure(s)' : 'all passed');

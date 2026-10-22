@@ -29,9 +29,14 @@
 
   var anim = Object.create(null); // per-id hover easing
   var focusables = [], focusId = null, focusOn = false, activate = false, sliders = Object.create(null);
+  var hoverNow = null, hoverPrev = null; // widget under the pointer or focus, for the hover tick
+
+  function sfx(name) { if (MB.audio) MB.audio.ui(name); }
+  function hovered(id) { hoverNow = id; if (hoverPrev !== id) sfx('uiHover'); }
 
   UI.begin = function (ctx, dt) {
     g = ctx; t += dt;
+    hoverPrev = hoverNow; hoverNow = null;
     // focus navigation from the previous frame's widget list
     var prev = focusables; focusables = [];
     var dir = 0, onSlider = focusOn && sliders[focusId]; // left/right adjust a focused slider instead of moving focus
@@ -136,6 +141,7 @@
     var hov = !dis && (UI.hover(x, y, w, h) || (focusOn && focusId === id));
     var press = hov && IN.mouse.down && UI.hover(x, y, w, h);
     var k = ease(id, hov ? 1 : 0, 0.35);
+    if (hov) hovered(id);
     var edge = 7, dy = press ? edge - 2 : 0;
     var grow = k * 4;
     g.save();
@@ -160,9 +166,12 @@
     var subCol = hov || tone.text === UI.C.edge ? 'rgba(28,22,34,0.78)' : 'rgba(255,250,240,0.85)';
     if (o.sub) UI.text(o.sub, X + W / 2, Y + H / 2 + size * 0.55, { size: size * 0.55, font: 'body', align: 'center', color: subCol, outline: false });
     g.restore();
-    if (dis) return false;
+    if (dis) {
+      if ((IN.mouse.clicked && UI.hover(x, y, w, h)) || (focusOn && focusId === id && activate)) { activate = false; sfx('deny'); }
+      return false;
+    }
     var clicked = (hov && IN.mouse.clicked && UI.hover(x, y, w, h)) || (focusOn && focusId === id && activate);
-    if (clicked) { activate = false; if (MB.audio && MB.audio.click) MB.audio.click(); }
+    if (clicked) { activate = false; sfx(/back$/.test(id) ? 'uiBack' : 'uiClick'); }
     return clicked;
   };
 
@@ -170,7 +179,7 @@
     var h = 58;
     focusables.push(id);
     var hov = UI.hover(x, y, w, h) || (focusOn && focusId === id);
-    if (hov) { g.fillStyle = 'rgba(255,255,255,0.07)'; rr(x - 10, y, w + 20, h, 12); g.fill(); }
+    if (hov) { g.fillStyle = 'rgba(255,255,255,0.07)'; rr(x - 10, y, w + 20, h, 12); g.fill(); hovered(id); }
     UI.text(label, x + 6, y + h / 2, { size: 26, font: 'body', color: hov ? UI.C.text : UI.C.dim, outline: false });
     var sw = 92, sh = 40, sx = x + w - sw, sy = y + (h - sh) / 2;
     var k = ease(id, val ? 1 : 0, 0.3);
@@ -179,7 +188,7 @@
     var kx = sx + sh / 2 + k * (sw - sh);
     g.fillStyle = UI.C.edge; g.beginPath(); g.arc(kx, sy + sh / 2, sh / 2 + 1, 0, TAU); g.fill();
     g.fillStyle = UI.C.text; g.beginPath(); g.arc(kx, sy + sh / 2, sh / 2 - 4, 0, TAU); g.fill();
-    if ((hov && IN.mouse.clicked && UI.hover(x, y, w, h)) || (focusOn && focusId === id && activate)) { activate = false; return !val; }
+    if ((hov && IN.mouse.clicked && UI.hover(x, y, w, h)) || (focusOn && focusId === id && activate)) { activate = false; sfx(val ? 'toggleOff' : 'toggleOn'); return !val; }
     return val;
   };
 
@@ -188,7 +197,7 @@
     focusables.push(id); sliders[id] = 1;
     var focused = focusOn && focusId === id;
     var hov = UI.hover(x, y, w, h) || focused;
-    if (hov) { g.fillStyle = 'rgba(255,255,255,0.07)'; rr(x - 10, y, w + 20, h, 12); g.fill(); }
+    if (hov) { g.fillStyle = 'rgba(255,255,255,0.07)'; rr(x - 10, y, w + 20, h, 12); g.fill(); hovered(id); }
     UI.text(label, x + 6, y + h / 2, { size: 26, font: 'body', color: hov ? UI.C.text : UI.C.dim, outline: false });
     var tw = w * 0.42, tx = x + w - tw - 90, ty = y + h / 2;
     var f = (val - min) / (max - min);
@@ -208,7 +217,9 @@
       if (IN.pressed('ArrowLeft') || IN.padPressed('left')) nv = val - step;
     }
     nv = Math.round(nv / step) * step;
-    return Math.max(min, Math.min(max, +nv.toFixed(4)));
+    nv = Math.max(min, Math.min(max, +nv.toFixed(4)));
+    if (nv !== val && MB.audio) MB.audio.ui('uiTick', { rate: 0.75 + 0.75 * (nv - min) / (max - min), jit: 0 });
+    return nv;
   };
 
   UI.tabs = function (id, labels, idx, x, y, w, h) {

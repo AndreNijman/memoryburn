@@ -17,7 +17,8 @@
   var DEFAULTS = {
     manualFire: false, aimAssist: false, shake: true, tracers: true, dmgNums: true, reducedFlashes: false, rangeRing: true,
     uiScale: 100, textSize: 100, vfx: 100, gameSpeed: 100, dmgTaken: 100, fpsCap: 0, skipStory: false, radio: true,
-    resolution: 0 // % of native pixels; 0 = Auto (drops when frames run slow)
+    resolution: 0, // % of native pixels; 0 = Auto (drops when frames run slow)
+    masterVol: 80, musicVol: 70, sfxVol: 80
   };
   function loadSettings() {
     var s = {}, k;
@@ -58,6 +59,7 @@
   app.applySettings = function () {
     var s = app.settings;
     UI.textScale = s.textSize / 100;
+    MB.audio.setVolumes(s);
     if (app.sim) { app.sim.settings.gameSpeed = s.gameSpeed / 100; app.sim.settings.dmgTaken = s.dmgTaken / 100; }
   };
   app.saveSettings = function () {
@@ -92,6 +94,7 @@
     if (!app.sim) return false;
     var ok = MB.sim.command(app.sim, app.slot, c);
     R.fx.consume(app.sim.events, fxSettings(true));
+    MB.audio.events(app, app.sim.events);
     afterSim();
     return ok;
   };
@@ -141,6 +144,7 @@
       MB.sim.step(s, inputs);
       R.fx.consume(s.events, fxSettings(true));
       MB.radio.events(app, s.events);
+      MB.audio.events(app, s.events);
       for (var i = 0; i < s.events.length; i++) {
         var e = s.events[i];
         if (e.t === 'hit' && e.slot === app.slot) dmgLog.push([s.time, e.dmg]);
@@ -198,6 +202,7 @@
     } else if (ATTRACT_SCREENS[sc]) stepAttract(dt);
     var ws = worldState();
     R.fx.update(dt, ws ? ws.biome : 'Neon Grid');
+    MB.audio.update(app, dt);
   }
 
   function worldState() {

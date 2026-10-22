@@ -1,6 +1,6 @@
 // Performance benchmark: a crowded late wave in a real browser, measuring per-frame JS cost by subsystem
 // plus a CPU profile of the hottest functions. Numbers are relative (headless Chromium rasterises on the CPU).
-// Usage: node tools/bench.mjs [--secs=8] [--wave=12] [--dpr=1] [--profile] [--off=floor,ground,top,weather,hud,world] [--smooth=low|medium|high] [--res=100 (0 = Auto)] [--arch=1]
+// Usage: node tools/bench.mjs [--secs=8] [--wave=12] [--dpr=1] [--profile] [--off=floor,ground,top,weather,hud,world] [--smooth=low|medium|high] [--res=100 (0 = Auto)] [--arch=1] [--audio]
 // 'busy' is the time spent inside requestAnimationFrame callbacks (with software canvas this includes raster).
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -14,10 +14,10 @@ for (const p of ['playwright', path.join(ROOT, '../tree/node_modules/playwright'
 }
 if (!pw) { console.error('playwright not found'); process.exit(2); }
 const arg = (k, d) => { const a = process.argv.find(x => x.startsWith('--' + k + '=')); return a ? +a.split('=')[1] : d; };
-const ARCH = arg('arch', 1), RES = arg('res', 100), SECS = arg('secs', 8), WAVE = arg('wave', 12), DPR = arg('dpr', 1), PROFILE = process.argv.includes('--profile');
+const AUDIO = process.argv.includes('--audio'), ARCH = arg('arch', 1), RES = arg('res', 100), SECS = arg('secs', 8), WAVE = arg('wave', 12), DPR = arg('dpr', 1), PROFILE = process.argv.includes('--profile');
 const OFF = ((process.argv.find(a => a.startsWith('--off=')) || '').slice(6)).split(',').filter(Boolean);
 
-const browser = await pw.chromium.launch({ args: process.env.BENCH_ARGS ? process.env.BENCH_ARGS.split(' ') : [] }); // e.g. BENCH_ARGS='--enable-gpu --ignore-gpu-blocklist'
+const browser = await pw.chromium.launch({ args: (process.env.BENCH_ARGS ? process.env.BENCH_ARGS.split(' ') : []).concat(AUDIO ? ['--autoplay-policy=no-user-gesture-required'] : []) }); // e.g. BENCH_ARGS='--enable-gpu --ignore-gpu-blocklist'
 const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: DPR });
 const errors = [];
 page.on('pageerror', e => errors.push(String(e)));
@@ -35,8 +35,9 @@ await page.goto(pathToFileURL(path.join(ROOT, 'index.html')).href + '?screen=pla
 await page.waitForFunction(() => window.MB && MB.app && MB.app.screen === 'play');
 
 // late wave, immortal player, timer frozen so the arena keeps filling
-await page.evaluate(([wave, off, res]) => {
+await page.evaluate(([wave, off, res, audio]) => {
   const s = MB.app.sim, p = s.players[0];
+  if (audio) MB.audio.unlock(); // --audio: start the AudioContext without a click
   MB.app.settings.resolution = res;
   s.wave = wave; p.max_hp = 1e9; p.hp = 1e9; p.cash = 0;
   ['damage', 'attack_speed'].forEach(k => { if (p[k] != null) p[k] *= 1; });
@@ -52,6 +53,8 @@ await page.evaluate(([wave, off, res]) => {
   wrap(MB.render.fx, 'update', 'fx.update');
   wrap(MB.screens, 'hud', 'screens.hud');
   wrap(MB.radio, 'update', 'radio.update');
+  wrap(MB.audio, 'events', 'audio.events');
+  wrap(MB.audio, 'update', 'audio.update');
   setInterval(() => { s.waveTime = 30; p.hp = p.max_hp; }, 100);
   const R = MB.render, noop = () => {};
   if (off.includes('floor')) R.drawFloor = g => { g.fillStyle = '#333'; g.fillRect(0, 0, 1920, 1080); };
@@ -62,7 +65,7 @@ await page.evaluate(([wave, off, res]) => {
   if (off.includes('world')) R.world = noop;
   let last = 0;
   (function tick(ts) { if (last) T.frames.push(ts - last); last = ts; requestAnimationFrame(tick); })(0);
-}, [WAVE, OFF, RES]);
+}, [WAVE, OFF, RES, AUDIO]);
 
 await page.waitForTimeout(4000); // let enemies pile up
 await page.evaluate(() => { const T = window.__bench; T.t = {}; T.n = {}; T.frames = []; T.t0 = performance.now(); window.__busy = []; });
@@ -76,7 +79,7 @@ const r = await page.evaluate(() => {
   const f = T.frames.slice().sort((a, b) => a - b), q = k => f[Math.min(f.length - 1, Math.floor(f.length * k))];
   const bz = window.__busy.slice().sort((a, b) => a - b), bq = k => bz[Math.min(bz.length - 1, Math.floor(bz.length * k))];
   return { frames: f.length, el, p50: q(0.5), p95: q(0.95), p99: q(0.99), t: T.t, n: T.n, busy: bz.reduce((a, b) => a + b, 0) / bz.length, b95: bq(0.95),
-    scale: MB.app.renderScale(), kills: s.kills, enemies: s.enemies.length, bullets: s.bullets.length, ebullets: s.ebullets.length, pickups: s.pickups.length };
+    audio: MB.audio.stats(), scale: MB.app.renderScale(), kills: s.kills, enemies: s.enemies.length, bullets: s.bullets.length, ebullets: s.ebullets.length, pickups: s.pickups.length };
 });
 await browser.close();
 
@@ -85,6 +88,7 @@ console.log(`busy ms/frame: mean ${r.busy.toFixed(2)}  p95 ${r.b95.toFixed(2)}${
 console.log(`render scale ${r.scale.toFixed(2)}   kills ${r.kills}   entities: ${r.enemies} enemies, ${r.bullets} bullets, ${r.ebullets} enemy bullets, ${r.pickups} pickups`);
 const per = Object.keys(r.t).map(k => [k, r.t[k] / r.frames, r.n[k] / r.frames]).sort((a, b) => b[1] - a[1]);
 per.forEach(([k, ms, n]) => console.log(`  ${k.padEnd(16)} ${ms.toFixed(2).padStart(6)} ms/frame   (${n.toFixed(2)} calls/frame)`));
+if (AUDIO) { const a = r.audio; console.log(`audio: ${a.ctx}, ${a.played} played, ${a.skipped} rate-limited, ${a.dropped} dropped, ${a.voices} live voices, song ${a.music && a.music.id}`); }
 
 if (prof) {
   const self = new Map(), byId = new Map(prof.nodes.map(n => [n.id, n]));

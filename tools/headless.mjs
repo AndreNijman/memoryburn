@@ -1,6 +1,6 @@
 // Headless checks for MemoryBurn: loads every manifest entry with env "any" into a node vm (no DOM),
 // then plays runs with the bot. Usage: node tools/headless.mjs [scenario ...]   (default: all)
-// Scenarios: load determinism run chars coop shop story snapshot
+// Scenarios: load determinism run chars coop shop story snapshot audio
 // Exit code is non-zero if anything fails.
 import vm from 'node:vm';
 import fs from 'node:fs';
@@ -171,6 +171,51 @@ if (run('snapshot')) {
   const copy = JSON.parse(JSON.stringify(s));
   for (let t = 0; t < 900; t++) { MB.sim.step(s, [MB.bot.input(s, 0)]); MB.sim.step(copy, [MB.bot.input(copy, 0)]); }
   check('snapshot: JSON round trip continues identically', MB.sim.hash(s) === MB.sim.hash(copy));
+}
+
+if (run('audio')) {
+  // every sound effect and drum renders: finite, not silent, normalised, a sane length
+  const SND = MB.sounds, DSP = MB.dsp, SG = MB.songs, D = MB.data, SR = 22050, bad = [];
+  for (const [id, d] of Object.entries(SND.list)) {
+    if (!['sfx', 'ui', 'voice', 'music'].includes(d.bus)) bad.push(id + ' bus');
+    for (let v = 0; v < d.vars; v++) {
+      const rec = d.make(MB.rng.make(id + ':' + v), 1, v), m = DSP.measure(DSP.render(rec.layers, SR, v + 1, rec.post));
+      if (m.bad || m.peak > 0.95 || m.rms < 0.02 || m.n / SR > 5) bad.push(id + '#' + v + ' ' + JSON.stringify(m));
+    }
+  }
+  for (const kit of Object.keys(SND.KITS)) for (const name of Object.keys(SND.DRUMS)) {
+    const rec = SND.drum(kit, name), m = DSP.measure(DSP.render(rec.layers, SR, 7, rec.post));
+    if (m.bad || m.rms < 0.01) bad.push('drum ' + kit + '/' + name);
+  }
+  check('audio: every sound renders finite, audible and unclipped', bad.length === 0, bad.length ? bad.join('; ') : Object.keys(SND.list).length + ' sounds');
+  // the engine's event mapping has a sound for every archetype, enemy, pickup and speaker
+  const need = D.ARCHETYPES.map((_, i) => 'gun' + i).concat(D.ENEMY_KINDS.map(k => 'kill_' + k), ['pickup_mat', 'pickup_xp', 'pickup_heal']);
+  const voices = Object.keys(D.STORY.speakers).filter(k => !SND.voice[k] || !SND.list[SND.voice[k].snd]);
+  check('audio: sounds for every archetype, enemy and pickup', need.every(id => SND.list[id]), need.filter(id => !SND.list[id]).join(','));
+  check('audio: a voice for every speaker', voices.length === 0, voices.join(','));
+  // songs: patches, kits and scales exist, every melody bar is 16 steps, every pattern uses known symbols
+  const sbad = [];
+  for (const [id, S] of Object.entries(SG.list)) {
+    if (!SG.SCALES[S.scale]) sbad.push(id + ' scale');
+    if (!SND.KITS[S.kit]) sbad.push(id + ' kit');
+    for (const k of (S.form || 'A')) if (!S.prog[k] && !S.prog.A) sbad.push(id + ' prog ' + k);
+    for (const d of S.drums || []) {
+      if (!SND.DRUMS[d[0]]) sbad.push(id + ' drum ' + d[0]);
+      for (const p of [].concat(d[1])) if (!/^[Xxo.]+$/.test(p)) sbad.push(id + ' pattern ' + p);
+    }
+    if (S.fill && (!SND.DRUMS[S.fill[0]] || S.fill[1].length !== 16)) sbad.push(id + ' fill');
+    for (const k of ['bass', 'arp']) if (S[k] && (!SG.PATCH[S[k].patch] || !/^[0-7.-]+$/.test(S[k].p))) sbad.push(id + ' ' + k);
+    if (S.pad && (!SG.PATCH[S.pad.patch] || !/^[x.-]+$/.test(S.pad.p))) sbad.push(id + ' pad');
+    for (const m of S.mel || []) {
+      if (!SG.PATCH[m.patch]) sbad.push(id + ' mel patch');
+      for (const sec of Object.keys(m).filter(k => /^[A-Z]$/.test(k))) m[sec].forEach((bar, i) => {
+        const toks = bar.split(' '), n = toks.reduce((a, t) => a + +t.split(':')[1], 0);
+        if (n !== 16 || !toks.every(t => /^(-?\d+|\.):\d+$/.test(t))) sbad.push(id + ' ' + sec + i + ' "' + bar + '" = ' + n);
+      });
+    }
+  }
+  check('audio: song data is well formed (bars add up to 16 steps)', sbad.length === 0, sbad.join('; ') || Object.keys(SG.list).length + ' songs');
+  check('audio: a song for every district', D.BIOME_NAMES.every(b => SG.list[SG.DISTRICT[b]]));
 }
 
 console.log(failures ? failures + ' failure(s)' : 'all passed');

@@ -49,8 +49,15 @@
     if (qs && qs !== questWas) pick(qs === 'done' ? ST.pools.questDone : ST.pools.questFail);
     questWas = qs;
 
-    if (cur) { cur.t += dt; if (cur.t >= cur.dur) cur = null; }
-    if (!cur && queue.length) cur = queue.shift();
+    if (cur) {
+      var was = Math.floor(cur.t * 60);
+      cur.t += dt;
+      if (app.settings.radio) { // a blip every few letters as the line types out (draw shows t * 60 chars)
+        for (var c = was + 1; c <= Math.min(cur.line.length, Math.floor(cur.t * 60)); c++) if (c % 4 === 1) MB.audio.blip(cur.who, cur.line[c - 1]);
+      }
+      if (cur.t >= cur.dur) { cur = null; if (app.settings.radio) MB.audio.ui('radioOff'); }
+    }
+    if (!cur && queue.length) { cur = queue.shift(); if (app.settings.radio) MB.audio.ui('radioOn'); }
   }
 
   function draw(app, g, vw, vh) {

@@ -86,8 +86,12 @@
     s.reducedFlashes = UI.toggle('o:flash', 'Reduced Flashes', s.reducedFlashes, x, yy, colW); yy += step;
     s.rangeRing = UI.toggle('o:ring', 'Show Range Ring', s.rangeRing, x, yy, colW); yy += step;
     s.radio = UI.toggle('o:radio', 'Radio Chatter', s.radio, x, yy, colW); yy += step;
-    var pct = function (v) { return Math.round(v) + '%'; };
+    s.skipStory = UI.toggle('o:story', 'Skip Story', s.skipStory, x, yy, colW); yy += step;
+    var pct = function (v) { return Math.round(v) + '%'; }, vpct = function (v) { return v === 0 ? 'Off' : Math.round(v) + '%'; };
     yy = y;
+    s.masterVol = UI.slider('o:vol', 'Master Volume', s.masterVol, 0, 100, 5, x2, yy, colW, vpct); yy += step;
+    s.musicVol = UI.slider('o:music', 'Music', s.musicVol, 0, 100, 5, x2, yy, colW, vpct); yy += step;
+    s.sfxVol = UI.slider('o:sfx', 'Sound Effects', s.sfxVol, 0, 100, 5, x2, yy, colW, vpct); yy += step;
     s.uiScale = UI.slider('o:ui', 'HUD Scale', s.uiScale, 75, 140, 5, x2, yy, colW, pct); yy += step;
     s.textSize = UI.slider('o:text', 'Text Size', s.textSize, 80, 140, 5, x2, yy, colW, pct); yy += step;
     s.vfx = UI.slider('o:vfx', 'VFX Intensity', s.vfx, 50, 150, 5, x2, yy, colW, pct); yy += step;
@@ -97,7 +101,6 @@
     // the left end of the track is Auto (stored as 0); fixed scales run 40-100%
     var res = UI.slider('o:res', 'Resolution', s.resolution || 30, 30, 100, 10, x2, yy, colW, function (v) { return v === 30 ? 'Auto' : v + '%'; }); yy += step;
     s.resolution = res === 30 ? 0 : res;
-    s.skipStory = UI.toggle('o:story', 'Skip Story', s.skipStory, x2, yy, colW); yy += step;
     app.applySettings();
   }
 
@@ -246,8 +249,9 @@
   function storyPanel(app, g, st, dt, opts) {
     opts = opts || {};
     var beat = st.beats[st.idx], who = beat[0], line = beat[1], sp = ST.speakers[who] || {}, col = sp.color || C.cyan;
-    var memory = who === 'FRAGMENT';
+    var memory = who === 'FRAGMENT', typed = Math.floor(st.chars || 0);
     st.chars = Math.min(line.length, (st.chars || 0) + dt * 46);
+    for (var c = typed + 1; c <= Math.floor(st.chars); c++) if (c % 3 === 1) MB.audio.blip(who, line[c - 1]);
     var px = W / 2 - 640, py = 250, pw = 1280, ph = 440;
     if (st.head) {
       UI.text(st.head, W / 2, 130, { size: 64, align: 'center', color: memory ? '#f1e3c4' : C.text });
@@ -276,14 +280,14 @@
     var last = st.idx === st.beats.length - 1 && st.chars >= line.length;
     var advance = UI.button('st:next', last ? (opts.lastLabel || 'Continue') : 'Next', px + pw - 280, py + ph - 88, 240, 66, { tone: 'primary', size: 30 })
       || IN.pressed('Space') || IN.confirm();
-    if (st.idx > 0 && UI.button('st:back', 'Back', px + 40, py + ph - 88, 180, 66, { size: 30 })) { st.idx--; st.chars = 0; }
+    if (st.idx > 0 && UI.button('st:back', 'Back', px + 40, py + ph - 88, 180, 66, { size: 30 })) { st.idx--; st.chars = 0; MB.audio.ui('pageTurn'); }
     if (!opts.noSkip) {
       app.settings.skipStory = UI.toggle('st:skip', 'Skip story', app.settings.skipStory, px + pw - 330, py + ph + 40, 330);
       if (app.settings.skipStory) return false;
     }
     if (advance) {
       if (st.chars < line.length) st.chars = line.length;
-      else { st.idx++; st.chars = 0; if (st.idx >= st.beats.length) return false; }
+      else { st.idx++; st.chars = 0; if (st.idx >= st.beats.length) return false; MB.audio.ui('pageTurn'); }
     }
     UI.text('Space or Enter to continue', px, py + ph + 62, { size: 24, font: 'body', color: C.dim, outline: false });
     return true;
@@ -309,7 +313,7 @@
       S.draw(g, 'npc:shard', W / 2, 400 + Math.sin(app.t * 2) * 8, { scale: 2.6 });
       ST.ending.choices.forEach(function (c, i) {
         if (UI.button('end:' + c.id, c.label, W / 2 - 560 + i * 600, 620, 520, 130, { tone: i === 0 ? 'primary' : 'danger', size: 46, sub: c.sub })) {
-          e.choice = c.id; e.stage = 'epilogue';
+          e.choice = c.id; e.stage = 'epilogue'; MB.audio.ui(c.id);
           e.story = { beats: ST.resolve(c.beats, runArch(app)), idx: 0, chars: 0, head: 'Epilogue', sub: c.label };
         }
       });
@@ -420,7 +424,7 @@
       UI.rr(lx, ly, 74, 74, 13); g.fillStyle = locked ? '#7a5a14' : (lh ? '#5a4f6c' : '#3d3350'); g.fill();
       if (locked) { g.lineWidth = 4; g.strokeStyle = P.yellow; UI.rr(lx + 2, ly + 2, 70, 70, 11); g.stroke(); }
       S.draw(g, locked ? 'hud:lock' : 'hud:unlock', lx + 37, ly + 39, { scale: 1.3, alpha: locked || lh ? 1 : 0.75 });
-      if (lh && IN.mouse.clicked) app.cmd({ t: 'lock', i: i });
+      if (lh && IN.mouse.clicked) { MB.audio.ui(locked ? 'unlock' : 'lock'); app.cmd({ t: 'lock', i: i }); }
       // description + deltas
       var dl = UI.wrap(item.desc, cw - 52, 26, 'body');
       dl.forEach(function (ln, k) { UI.text(ln, x + 26, y + 196 + k * 34, { size: 26, font: 'body', color: C.text, outline: false }); });
