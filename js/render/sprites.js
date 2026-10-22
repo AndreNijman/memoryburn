@@ -556,11 +556,11 @@
     if (d.deco === 'grid') {
       g.strokeStyle = line; g.lineWidth = 2;
       for (i = 0; i <= N; i += 64) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i, N); g.moveTo(0, i); g.lineTo(N, i); g.stroke(); }
-      for (i = 0; i < 9; i++) {
+      for (i = 0; i < 4; i++) {
         (function (x, y) {
           at(x, y, 40, function () {
-            g.fillStyle = rgba(d.glow, 0.18); g.fillRect(-30, -30, 60, 60);
-            g.strokeStyle = rgba(d.glow, 0.55); g.lineWidth = 2; g.strokeRect(-30, -30, 60, 60);
+            g.fillStyle = rgba(d.glow, 0.07); g.fillRect(-30, -30, 60, 60);
+            g.strokeStyle = rgba(d.glow, 0.22); g.lineWidth = 2; g.strokeRect(-30, -30, 60, 60);
           });
         })(r.randint(0, 7) * 64 + 32, r.randint(0, 7) * 64 + 32);
       }
@@ -598,15 +598,15 @@
         })(r.uniform(0, N), r.uniform(0, N), r.uniform(18, 46));
       }
     } else if (d.deco === 'cracks') {
-      for (i = 0; i < 12; i++) {
-        var pts = [[0, 0]];
-        for (var s = 0; s < 5; s++) { var last = pts[pts.length - 1]; pts.push([last[0] + r.uniform(-26, 26), last[1] + r.uniform(-26, 26)]); }
+      for (i = 0; i < 6; i++) {
+        var pts = [[0, 0]], heading = r.uniform(0, TAU);
+        for (var s = 0; s < 4; s++) { var last = pts[pts.length - 1]; heading += r.uniform(-0.6, 0.6); pts.push([last[0] + Math.cos(heading) * 22, last[1] + Math.sin(heading) * 22]); }
         (function (x, y, pts) {
           at(x, y, 140, function () {
             g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
             for (var q = 1; q < pts.length; q++) g.lineTo(pts[q][0], pts[q][1]);
-            g.strokeStyle = shade(d.base, -0.45); g.lineWidth = 6; g.stroke();
-            g.strokeStyle = rgba(d.glow, 0.75); g.lineWidth = 2; g.stroke();
+            g.strokeStyle = shade(d.base, -0.3); g.lineWidth = 6; g.stroke();
+            g.strokeStyle = rgba(d.glow, 0.4); g.lineWidth = 2; g.stroke();
           });
         })(r.uniform(0, N), r.uniform(0, N), pts);
       }

@@ -1,0 +1,106 @@
+# Memory Burn
+
+A cyberpunk wave-survival shooter. You fight through timed contracts across seven districts, spend eddies in the Back-Alley Market between waves, and piece together who burned you.
+
+This is a browser port of the original pygame game, which shipped as `MemoryBurn.exe`. It uses plain JavaScript and `<canvas>`, with no build step and no dependencies. Every sprite is drawn in code, in a chunky outlined style with flat colours, round bodies and blob enemies with eyes.
+
+## Running it
+
+Open `index.html` in a browser, or serve the folder with any static server:
+
+```sh
+python3 -m http.server 8000   # then open http://localhost:8000
+```
+
+URL flags:
+
+| Flag | Effect |
+| --- | --- |
+| `?debug` | Turns on the debug keys: `8` ends the current contract, `9` adds 100 eddies |
+| `?seed=N` | Uses a fixed run seed |
+| `?screen=shop&arch=3` | Opens a screen directly (`menu chars difficulty play shop preview pause gameover`); used for screenshots |
+
+## Controls
+
+| Action | Keyboard / mouse | Gamepad |
+| --- | --- | --- |
+| Move | WASD or arrow keys | Left stick |
+| Dash | Space, Shift or right mouse | A, LB, LT |
+| Aim | Mouse | Right stick |
+| Fire | Automatic. With Manual Fire on, hold the left mouse button | RT or RB |
+| Pause | Esc | Start |
+| Menus | Mouse, arrow keys and Enter | D-pad and A |
+
+## Layout
+
+```
+index.html               page shell; loads the scripts in manifest order and waits for the fonts
+scripts.manifest.json    script order; env "any" scripts must run without a DOM
+js/core/mb.js            MB namespace, seeded RNG (mulberry32), cosmetic RNG, math utils
+js/data/data.js          all content and tuning, copied value for value from the original
+js/sim/sim.js            the game rules (deterministic)
+js/sim/bot.js            autopilot, used by the menu background and the tests
+js/render/sprites.js     procedural sprites baked to offscreen canvases, plus district floors
+js/render/icons.js       shop and stat icons
+js/render/fx.js          particles, splats, damage numbers, shake, weather (cosmetic only)
+js/render/render.js      draws the arena from sim state with interpolation
+js/input/input.js        keyboard, mouse and gamepad turned into sim inputs
+js/ui/ui.js              immediate-mode canvas widgets
+js/ui/screens.js         every screen plus the HUD
+js/main.js               fixed-step loop, screen state machine, settings
+reference/               recovered original source and the bytecode checker used to verify it
+tools/                   headless tests, browser playtest, screenshot helper, sprite sheet
+```
+
+### Ready for multiplayer
+
+The sim is written so that a host-authoritative online mode (the model broIsAPotato uses) can be added without touching the game rules:
+
+- Each step is fixed and every random roll comes from a seeded RNG, so the same seed and inputs always produce the same game. The sim never reads `Math.random`, `Date` or the DOM.
+- State is plain JSON: it can be snapshotted, sent over the network and restored.
+- Each player is a slot in `state.players` with their own stats, cash, shop and ready flag. Enemies chase the nearest living player. Waves and shops move on only when every player is ready.
+- The UI changes the game only through `app.cmd({t: 'buy' | 'lock' | 'reroll' | 'ready' | 'deploy', ...})`, and each frame's input reaches the sim as one input object per slot. A network layer would replace those two calls.
+
+## Tests
+
+```sh
+node tools/headless.mjs      # sim: determinism, full bot runs, all 8 characters, 4-player co-op, shop, snapshots
+node tools/playtest.mjs      # browser: real clicks and keys through menu > run > pause > shop > preview > game over
+node tools/shot.mjs 'index.html?screen=shop' out.png 1920 1080   # screenshot
+```
+
+The browser tools use Playwright. If it isn't installed here, they borrow it from `../tree/node_modules`.
+
+## Differences from the original
+
+### Bugs fixed
+
+- **Suicide enemies:** they now die after bursting. The original set their HP to 0 but kept them alive, so they burst again every frame.
+- **Aegis enemies:** they now walk toward the player at 70% speed. The original had no movement code for Aegis, so they stayed on the arena edge forever.
+- **Junk Saint:** the pickup-radius bonus is now applied. The original never read it.
+- **Shop locks:** clicking a card's padlock no longer also buys the card.
+- **Pets and lifesteal:** pets orbit on game time instead of the wall clock. Lifesteal, enemy wobble phase and pickup scatter use the game's seeded RNG.
+- **Story beat 1:** it now plays at the start of a run. The original only looked up beats for the next contract, so it never showed beat 1.
+- **Aim Assist:** with Manual Fire on, it snaps your aim to the nearest enemy within about 16° of the cursor. In the original the option did nothing.
+
+### Kept on purpose
+
+These are original behaviours. They change the balance but aren't crashes, so they stay:
+
+- Reactor Core's heat drain can't take you below 1 HP.
+- The magnet drone's pickup range keeps growing.
+- Piercing bullets can hit the same enemy again on later frames.
+- The Overlord has normal enemy HP.
+- Rerolling with locked cards rolls the unlocked slots without your wave or luck bonus.
+- Blue XP pickups give nothing.
+- Small +damage% items can round to no change at low damage (for example 16 × 1.06 truncates to 16).
+
+### New in this port
+
+- A fixed 60 Hz simulation with interpolated rendering.
+- Procedural sprites and per-district floors, weather and lighting.
+- A shop stats panel and per-card stat previews, computed by applying the item to a copy of the player with the real game code.
+- Gamepad and keyboard menu navigation.
+- Settings saved in the browser.
+- A menu background where the autopilot plays the game.
+- Co-op-ready game rules (see above).

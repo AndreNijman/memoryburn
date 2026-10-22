@@ -608,6 +608,7 @@
     if (!p || !cmd) return false;
     var rng = rngOf(state), ok = false;
     state.events.length = 0;
+    if (cmd.t === 'debugCash') { p.cash += 100; return true; }
     if (state.phase === 'shop') {
       var s = p.shop, i = cmd.i;
       if (cmd.t === 'lock' && i >= 0 && i < 3) { s.locks[i] = !s.locks[i]; ok = true; }
@@ -631,7 +632,6 @@
       p.ready = true; ok = true;
       if (allReady(state)) startNextWave(state, rng);
     } else if (state.phase === 'play' && cmd.t === 'debugSkip') { state.waveTime = 0; ok = true; }
-    else if (cmd.t === 'debugCash') { p.cash += 100; ok = true; }
     state.rng.s = rng.s;
     return ok;
   }

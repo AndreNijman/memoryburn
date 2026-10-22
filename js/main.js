@@ -45,7 +45,7 @@
     if (name === 'options') app.optionsReturn = app.screen === 'pause' ? 'pause' : 'menu';
     if (name === 'menu' && app.screen !== 'options') app.menuT0 = app.t;
     app.screen = name; app.screenT = 0;
-    UI.clearFocus();
+    UI.clearFocus(); IN.flush();
     app.saveSettings();
   };
 

@@ -22,6 +22,8 @@
   var padPrev = {};
 
   // keys the browser should not act on while the game has focus
+  var DASH_KEYS = { Space: 1, ShiftLeft: 1, ShiftRight: 1 };
+  var dashLatch = false;
   var GRAB = { Space: 1, ArrowUp: 1, ArrowDown: 1, ArrowLeft: 1, ArrowRight: 1, Tab: 1 };
 
   function toVirtual(e, canvas) {
@@ -33,7 +35,7 @@
 
   I.attach = function (canvas) {
     window.addEventListener('keydown', function (e) {
-      if (!keys[e.code]) edges[e.code] = true;
+      if (!keys[e.code]) { edges[e.code] = true; if (DASH_KEYS[e.code]) dashLatch = true; }
       keys[e.code] = true; I.usingPad = false;
       if (GRAB[e.code]) e.preventDefault();
     });
@@ -42,7 +44,7 @@
     canvas.addEventListener('pointermove', function (e) { toVirtual(e, canvas); mouse.moved = true; I.usingPad = false; });
     canvas.addEventListener('pointerdown', function (e) {
       toVirtual(e, canvas); canvas.focus();
-      if (e.button === 2) mouse.rdown = true; else { mouse.down = true; mouse.clicked = true; }
+      if (e.button === 2) { mouse.rdown = true; dashLatch = true; } else { mouse.down = true; mouse.clicked = true; }
       I.usingPad = false;
       try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* not supported */ }
     });
@@ -81,6 +83,12 @@
   };
   I.padPressed = function (k) { return !!(I.pad && I.pad.edge[k]); };
 
+  // Drop this frame's edges so an input that changed screens is not seen again by the new screen.
+  I.flush = function () {
+    edges = Object.create(null); mouse.clicked = false; dashLatch = false;
+    if (I.pad) I.pad.edge = {};
+  };
+
   I.endFrame = function () {
     edges = Object.create(null);
     mouse.clicked = false; mouse.released = false; mouse.wheel = 0; mouse.moved = false;
@@ -93,7 +101,8 @@
     if (keys.KeyD || keys.ArrowRight) mx += 1;
     if (keys.KeyW || keys.ArrowUp) my -= 1;
     if (keys.KeyS || keys.ArrowDown) my += 1;
-    var dash = !!(keys.Space || keys.ShiftLeft || keys.ShiftRight || mouse.rdown);
+    var dash = !!(keys.Space || keys.ShiftLeft || keys.ShiftRight || mouse.rdown || dashLatch);
+    dashLatch = false; // a tap is held until one sim step has seen it, even if it was shorter than a frame
     var aimX = mouse.x, aimY = mouse.y, fire = mouse.down;
     var pad = I.pad;
     if (pad) {
