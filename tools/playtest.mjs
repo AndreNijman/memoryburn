@@ -105,6 +105,8 @@ await until(async () => sim(() => MB.app.sim.enemies.some(e => e.etype === 'over
 await sim(() => { MB.app.sim.players[0].hp = MB.app.sim.players[0].max_hp; });
 await wait(400);
 await shot('pt_boss');
+await sim(() => { const s = MB.app.sim, p = s.players[0], e = s.enemies.find(x => x.etype === 'overlord'); e.hp = 1; e.x = p.x + 90; e.y = p.y; });
+check('boss death plays its radio line', await until(async () => sim(() => { const c = MB.radio.current(); return !!c && c.line === MB.data.STORY.contracts[15].boss.down; }), 4000));
 await page.keyboard.press('Digit8'); await wait(300);
 check('contract 15 end -> ending', (await screen()) === 'ending', await screen());
 await shot('pt_ending_lead');

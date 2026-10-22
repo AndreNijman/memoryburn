@@ -83,7 +83,6 @@ The browser tools use Playwright. If it isn't installed here, they borrow it fro
 - **Junk Saint:** the pickup-radius bonus is now applied. The original never read it.
 - **Shop locks:** clicking a card's padlock no longer also buys the card.
 - **Pets and lifesteal:** pets orbit on game time instead of the wall clock. Lifesteal, enemy wobble phase and pickup scatter use the game's seeded RNG.
-- **Story beat 1:** it now plays at the start of a run. The original only looked up beats for the next contract, so it never showed beat 1.
 - **Aim Assist:** with Manual Fire on, it snaps your aim to the nearest enemy within about 16° of the cursor. In the original the option did nothing.
 
 ### Kept on purpose

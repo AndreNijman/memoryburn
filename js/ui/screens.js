@@ -294,6 +294,7 @@
   // After the last contract: the lead-in, the choice, the epilogue, then Afterburn or the menu.
   SC.ending = function (app, g, dt) {
     var e = app.ending;
+    if (!e) { app.go('menu'); return; }
     backdrop(g, 0.97); scanlines(g, app.t);
     if (e.stage === 'lead' || e.stage === 'epilogue') {
       if (storyPanel(app, g, e.story, dt, { noSkip: true, lastLabel: e.stage === 'lead' ? 'Decide' : 'Continue' })) return;

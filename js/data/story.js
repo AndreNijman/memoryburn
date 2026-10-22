@@ -123,7 +123,7 @@
         scene: [
           ['NINE', 'It\'s my thumbprint. My handwriting. "Burn all of it. Don\'t let me come looking."'],
           ['DOC', 'I said none of those stitches were mine. I lied. You paid me extra to lie, and you were very specific about it.'],
-          ['DOC', 'Be angry at me later. Lethe knows you read the contract.']
+          ['DOC', 'Be angry at me later. And the eight grand is real. You paid for the burn, not the aftercare. Lethe knows you read the contract.']
         ],
         note: 'Lethe crews are sweeping the Grid for you. All of them. Make them regret the overtime.',
         radio: [
@@ -171,9 +171,8 @@
       12: {
         title: 'Clause 14', district: 'Dust Slums',
         scene: [
-          ['DOC', "You made me promise to never tell you this, so I'll say it fast. Ren took a Lethe loan and couldn't pay. They took her memories. All of them."],
-          ['DOC', 'You sold yours to buy hers back. Lethe says a shared memory belongs to whoever sold first. Ren got her life back with you cut out of it.'],
-          ['DOC', 'Clause 14. If you ever take back the core shard, the sale voids and Lethe takes Ren\'s memories again. You knew. You signed anyway.']
+          ['DOC', "Ren took a Lethe loan and couldn't pay, so they took her memories. All of them. You sold yours to buy them back."],
+          ['DOC', 'Lethe says a shared memory belongs to whoever sold first, so Ren got her life back with you cut out of it. Clause 14: take the core shard back and the sale voids. Lethe takes hers again.']
         ],
         note: "Lethe sent a crew to seize Doc's clinic records. Doc is in the clinic. Doc refuses to leave the clinic.",
         radio: [
@@ -217,7 +216,7 @@
     ending: {
       lead: [
         ['NINE', 'The shard is warm, about the size of a thumbnail. Everything I was is in there, including the reason I gave it away.'],
-        ['DOC', 'Plug it in and you get yourself back, and Ren gets nothing. Smash it and you stay Nine. She keeps a life that doesn\'t have you in it.']
+        ['DOC', "Don't look at me. I've done enough of your deciding."]
       ],
       choices: [
         {
@@ -232,7 +231,7 @@
           id: 'smash', label: 'Smash it', sub: 'Stay Nine. Ren keeps her life.',
           beats: [
             ['NINE', 'It broke like cheap glass. The vault alarms went off and then gave up.'],
-            ['LUCKY', 'A woman from the Mesh keeps asking if I know anybody who looks like her favourite shard. I said I\'d ask around. Want me to keep asking?'],
+            ['LUCKY', "Ren keeps coming by asking where you went. I told her you left town. Want me to keep saying that?"],
             ['DOC', '@archEnd']
           ]
         }

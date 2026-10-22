@@ -67,7 +67,7 @@
     var lift = e.etype === 'skater' ? Math.sin(t * 14 + e.id) * 2 : Math.max(0, bob) * 3;
     var so = { scale: sc * popS, sx: sx, sy: sy, flip: face < 0, flash: flash };
     S.draw(g, key, x, y - hh * 0.08 - lift, so);
-    if (e.etype === 'overlord' && bossArt) S.draw(g, 'bossgear:' + bossArt, x, y - hh * 0.08 - lift, so); // named campaign boss
+    if (e.etype === 'overlord' && bossArt && e.id === bossId) S.draw(g, 'bossgear:' + bossArt, x, y - hh * 0.08 - lift, so); // named boss; respawns are plain overlords
     if (e.etype === 'suicide' && Math.sin(t * 16 + e.id) > 0.3) { // blinking fuse light
       g.fillStyle = 'rgba(255,90,110,0.45)'; g.beginPath(); g.arc(x, y - hh * 0.24, 9, 0, TAU); g.fill();
     }
@@ -121,11 +121,13 @@
     }
   }
 
-  var bossArt = 0;
+  var bossArt = 0, bossId = null, bossOf = null; // the first overlord of a boss contract is the named boss
   R.world = function (g, state, prev, a, t, opts) {
     opts = opts || {};
-    var i, pos, ct = MB.data.STORY.contract(state.wave);
+    var i, pos, ct = MB.data.STORY.contract(state.wave), key = state.seed + ':' + state.wave;
     bossArt = ct && ct.boss ? ct.boss.art : 0;
+    if (bossOf !== key) { bossOf = key; bossId = null; }
+    if (bossArt && bossId == null) state.enemies.forEach(function (e) { if (e.etype === 'overlord' && bossId == null) bossId = e.id; });
     R.drawFloor(g, state.biome);
     R.fx.drawGround(g);
 
