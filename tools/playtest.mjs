@@ -81,7 +81,11 @@ check('shop: reroll keeps the locked card', await sim(i => MB.app.sim.players[0]
 await shot('pt_shop');
 await click(1630, 1013);                     // Contract Start
 check('shop -> preview', (await screen()) === 'preview', await screen());
-for (let i = 0; i < 8 && (await screen()) === 'preview'; i++) { await page.keyboard.press('Space'); await wait(150); }
+const beats = await sim(() => MB.app.story ? MB.app.story.beats.length : 0);
+for (let i = 0; i < beats * 2; i++) { await page.keyboard.press('Space'); await wait(150); }  // reveal + advance each beat
+check('story end shows the briefing (no same-press deploy)', (await screen()) === 'preview' && (await sim(() => MB.app.story)) === null, beats + ' beat(s), screen ' + (await screen()));
+await shot('pt_briefing');
+await page.keyboard.press('Space'); await wait(200);
 check('preview -> play wave 2', (await screen()) === 'play' && (await sim(() => MB.app.sim.wave)) === 2, await screen());
 
 // death -> game over -> retry

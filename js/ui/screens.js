@@ -426,7 +426,7 @@
     backdrop(g, 0.86); scanlines(g, app.t);
     if (app.story && !app.settings.skipStory) {
       if (storyPanel(app, g, app.story, dt)) return;
-      app.story = null; app.saveSettings();
+      app.story = null; app.saveSettings(); IN.flush(); // the press that ended the story must not also deploy
     }
     var pv = MB.sim.previewLines(st);
     UI.text('Contract Briefing', W / 2, 120, { size: 72, align: 'center' });

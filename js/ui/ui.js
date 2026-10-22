@@ -28,15 +28,16 @@
   UI.textScale = 1;
 
   var anim = Object.create(null); // per-id hover easing
-  var focusables = [], focusId = null, focusOn = false, activate = false;
+  var focusables = [], focusId = null, focusOn = false, activate = false, sliders = Object.create(null);
 
   UI.begin = function (ctx, dt) {
     g = ctx; t += dt;
     // focus navigation from the previous frame's widget list
     var prev = focusables; focusables = [];
-    var dir = 0;
-    if (IN.pressed('ArrowDown') || IN.pressed('ArrowRight') || IN.pressed('Tab') || IN.padPressed('down') || IN.padPressed('right')) dir = 1;
-    if (IN.pressed('ArrowUp') || IN.pressed('ArrowLeft') || IN.padPressed('up') || IN.padPressed('left')) dir = -1;
+    var dir = 0, onSlider = focusOn && sliders[focusId]; // left/right adjust a focused slider instead of moving focus
+    if (IN.pressed('ArrowDown') || IN.pressed('Tab') || IN.padPressed('down') || (!onSlider && (IN.pressed('ArrowRight') || IN.padPressed('right')))) dir = 1;
+    if (IN.pressed('ArrowUp') || IN.padPressed('up') || (!onSlider && (IN.pressed('ArrowLeft') || IN.padPressed('left')))) dir = -1;
+    sliders = Object.create(null);
     if (IN.mouse.moved) focusOn = false;
     if (dir && prev.length) {
       var idx = -1;
@@ -184,7 +185,7 @@
 
   UI.slider = function (id, label, val, min, max, step, x, y, w, fmt) {
     var h = 58;
-    focusables.push(id);
+    focusables.push(id); sliders[id] = 1;
     var focused = focusOn && focusId === id;
     var hov = UI.hover(x, y, w, h) || focused;
     if (hov) { g.fillStyle = 'rgba(255,255,255,0.07)'; rr(x - 10, y, w + 20, h, 12); g.fill(); }
