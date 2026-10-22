@@ -90,7 +90,7 @@ await page.keyboard.press('Space'); await wait(200);
 check('preview -> play wave 2', (await screen()) === 'play' && (await sim(() => MB.app.sim.wave)) === 2, await screen());
 check('districts follow the campaign', (await sim(() => MB.app.sim.biome)) === 'Rain Alley', await sim(() => MB.app.sim.biome));
 await wait(3200);
-check('radio plays the contract line', await sim(() => { const c = MB.radio.current(); return !!c && c.line === MB.data.STORY.contracts[2].radio[0][1]; }), await sim(() => JSON.stringify(MB.radio.current())));
+check('radio plays the contract line', await until(async () => sim(() => { const c = MB.radio.current(); return !!c && c.line === MB.data.STORY.contracts[2].radio[0][1]; }), 8000), await sim(() => JSON.stringify(MB.radio.current()))); // a side-job bark can play first
 await shot('pt_radio');
 
 // jump to the last contract and play out the ending
