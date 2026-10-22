@@ -48,11 +48,17 @@ js/render/icons.js       shop and stat icons
 js/render/fx.js          particles, splats, damage numbers, shake, weather (cosmetic only)
 js/render/render.js      draws the arena from sim state with interpolation
 js/input/input.js        keyboard, mouse and gamepad turned into sim inputs
+js/audio/dsp.js          offline synth that renders sound recipes into sample buffers (runs headless)
+js/audio/sounds.js       sound effect recipes, dialogue voices and drum kits
+js/audio/songs.js        the soundtrack as data: patches, scales, the memory motif, 16 songs
+js/audio/music.js        look-ahead sequencer that plays a song with live Web Audio voices
+js/audio/engine.js       AudioContext, mixer, sim events to sounds, ambience, music director
 js/ui/ui.js              immediate-mode canvas widgets
 js/ui/screens.js         every screen plus the HUD
 js/ui/radio.js           in-wave radio chatter driven by the script and sim events
 js/main.js               fixed-step loop, screen state machine, settings
 docs/story.md            story bible: premise, cast, reveal order, rules for new lines
+docs/audio.md            sound: mix, sound list, songs, how to add either
 reference/               recovered original source and the bytecode checker used to verify it
 tools/                   headless tests, browser playtest, benchmark, screenshot helper, sprite sheet
 ```
@@ -69,10 +75,11 @@ The sim is written so that a host-authoritative online mode (the model broIsAPot
 ## Tests
 
 ```sh
-node tools/headless.mjs      # sim: determinism, bot runs, all 8 characters, 4-player co-op, shop, story data, snapshots
+node tools/headless.mjs      # sim: determinism, bot runs, all 8 characters, 4-player co-op, shop, story data, snapshots, audio
 node tools/playtest.mjs      # browser: real clicks and keys through menu > story > run > pause > shop > briefing > ending > game over
 node tools/shot.mjs 'index.html?screen=shop' out.png 1920 1080   # screenshot
-node tools/bench.mjs         # frame rate and per-system JS cost in a crowded wave 12 (flags in the file header)
+node tools/bench.mjs         # frame rate and per-system JS cost in a crowded wave 12 (flags in the file header; --audio adds sound)
+node tools/audiocheck.mjs    # renders every song offline in Chromium and checks loudness, clipping and NaN
 ```
 
 Headless Chromium draws the canvas on the CPU, so the bench's fps is a worst case. Add `BENCH_ARGS='--disable-gpu-vsync --disable-frame-rate-limit'` to measure uncapped, or `BENCH_ARGS='--headless=new --enable-gpu --ignore-gpu-blocklist'` to use the GPU.
@@ -114,6 +121,7 @@ These are original behaviours. They change the balance but aren't crashes, so th
   - The ending is a choice, followed by Afterburn for endless play.
 
   See `docs/story.md`. The sim reads only the district schedule. It still makes the same random roll it made before, so the RNG stream is unchanged.
+- **Sound.** The original was silent. The port synthesizes 63 sound effects at load time and plays a procedural soundtrack: a song for each screen, district, boss and ending, all built on one four-bar motif. Fight songs add and drop layers with the fight's intensity and change district on the bar line. Each district has an ambience bed, each speaker a dialogue voice, and Options has Master, Music and Sound Effects sliders. See `docs/audio.md`.
 - A fixed 60 Hz simulation with interpolated rendering.
 - Procedural sprites and per-district floors, weather and lighting.
 - A shop stats panel and per-card stat previews, computed by applying the item to a copy of the player with the real game code.
