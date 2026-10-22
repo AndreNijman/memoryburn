@@ -33,7 +33,7 @@ You wake up on Doc's table with your memory burned out and a barcode on your nec
 
 ## Where the text appears
 
-- **Story panels** (they pause the game) show the intro, a scene before contracts 2, 3, 4, 6, 8, 9, 11, 12 and 13, and the ending. The Skip Story option turns them off.
+- **Story panels** (they pause the game) show the intro, a scene before contracts 2, 3, 4, 6, 8, 9, 11, 12 and 13, and the ending. The Skip Story option turns off everything except the ending.
 - **The Contract Briefing** shows the contract name, the act, Lucky's note and the named boss.
 - **The radio** shows two lines per contract while you fight, plus the boss's entrance and death lines, Doc when your HP is low, and Lucky when a side-job finishes or fails. It never pauses the game, and the Radio Chatter option turns it off.
 - **The wave banner** shows the contract or boss name.
