@@ -230,6 +230,11 @@
     return e;
   }
 
+  function dropDead(list) { // in place, order kept
+    for (var i = 0, n = 0; i < list.length; i++) if (!list[i].dead) list[n++] = list[i];
+    list.length = n;
+  }
+
   function addEnemyBullet(state, x, y, vx, vy, dmg) {
     state.ebullets.push({ id: state.nextId++, x: x, y: y, vx: vx, vy: vy, dmg: dmg, life: 3.5 });
   }
@@ -485,7 +490,7 @@
     // enemies and pickups
     var dmul = difficultyMul(state);
     for (i = 0; i < state.enemies.length; i++) updateEnemy(state, rng, state.enemies[i], dt, dmul);
-    state.enemies = state.enemies.filter(function (x) { return !x.dead; });
+    dropDead(state.enemies);
     var pmul = biomeOf(state).pickup_mul != null ? biomeOf(state).pickup_mul : 1.0;
     for (i = 0; i < state.pickups.length; i++) {
       var pk = state.pickups[i];
@@ -505,6 +510,7 @@
     var dmgTaken = state.settings.dmgTaken;
 
     // bullet hits (enemies are AABBs of `size`, bullets AABBs of 2r, as in pygame's rect collision)
+    var anyHit = false;
     for (i = state.bullets.length - 1; i >= 0; i--) {
       b = state.bullets[i];
       var hit = false;
@@ -531,9 +537,9 @@
           if (state.quest && state.quest.kind === 'Kills') state.quest.progress += 1;
         }
       }
-      if (hit) { if (b.pierce > 0) b.pierce -= 1; else state.bullets.splice(i, 1); }
-      if (hit) state.enemies = state.enemies.filter(function (x) { return !x.dead; });
+      if (hit) { anyHit = true; if (b.pierce > 0) b.pierce -= 1; else state.bullets.splice(i, 1); }
     }
+    if (anyHit) dropDead(state.enemies); // dead enemies are skipped above, so one sweep matches filtering per hit
 
     // contact damage
     for (j = 0; j < state.enemies.length; j++) {
