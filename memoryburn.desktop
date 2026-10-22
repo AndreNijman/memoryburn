@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=MemoryBurn
+Exec=/var/home/andre/.local/bin/memoryburn
+Categories=Game;
+Terminal=false

@@ -1,0 +1,34 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>MemoryBurn sprite sheet</title>
+<style>html,body{margin:0;background:#1c1622}canvas{display:block}</style></head>
+<body><canvas id="c" width="1600" height="900"></canvas>
+<script src="../js/core/mb.js"></script>
+<script src="../js/render/sprites.js"></script>
+<script>
+  var c = document.getElementById('c'), g = c.getContext('2d');
+  var biome = new URLSearchParams(location.search).get('biome') || '_default';
+  g.fillStyle = g.createPattern(MB.sprites.floor(biome), 'repeat'); g.fillRect(0, 0, c.width, c.height);
+  var S = MB.sprites, scale = +(new URLSearchParams(location.search).get('scale') || 1.6);
+  function label(t, x, y) { g.font = 'bold 15px system-ui'; g.fillStyle = '#fbf6ec'; g.textAlign = 'center'; g.fillText(t, x, y); }
+  var names = ['Netrunner', 'Solo', 'Courier', 'Vamp', 'Techno Monk', 'Riot Runner', 'Steel Witch', 'Junk Saint'];
+  for (var i = 0; i < 8; i++) {
+    var x = 100 + i * 190, y = 150;
+    S.draw(g, 'shadow', x, y + 44 * scale / 1.6, { scale: scale * 0.7 });
+    S.draw(g, 'gun:' + i, x + 34, y + 12, { scale: scale * 0.8, rot: -0.25 });
+    S.draw(g, 'char:' + i, x, y, { scale: scale });
+    label(names[i], x, y + 105);
+  }
+  S.ENEMY_KINDS.forEach(function (k, j) {
+    var x = 110 + j * 205, y = 430;
+    var sc = k === 'overlord' ? 1 : scale;
+    S.draw(g, 'shadow', x, y + S.get('enemy:' + k).h * sc * 0.42, { scale: sc * S.get('enemy:' + k).w / 64 });
+    S.draw(g, 'enemy:' + k, x, y, { scale: sc, flip: false });
+    label(k, x, y + 120);
+  });
+  ['pickup:mat', 'pickup:xp', 'pickup:heal', 'pet:turret_buddy', 'pet:magnet_drone', 'pet:heal_bot', 'ebullet', 'bullet:#ffe9a8', 'bullet:#7af0ff', 'spawnmark', 'portal'].forEach(function (k, j) {
+    var x = 80 + j * 135, y = 720;
+    S.draw(g, k, x, y, { scale: k === 'portal' ? 1 : scale });
+    label(k.replace(/^\w+:/, ''), x, y + 80);
+  });
+  document.title = 'ready';
+</script></body></html>
