@@ -99,7 +99,7 @@
     var s = app.sim;
     if (!s) return;
     if (s.phase === 'shop' && app.screen === 'play') {
-      if (s.wave === ST.last) { // the campaign's last contract just ended; the ending shows even with Skip Story on
+      if (s.wave === ST.last && !app.settings.skipStory) { // the campaign's last contract just ended
         app.ending = { stage: 'lead', choice: null, story: { beats: ST.ending.lead, idx: 0, chars: 0, head: 'The Vault', sub: 'Under the reactor' } };
         app.go('ending');
       } else app.go('shop');
