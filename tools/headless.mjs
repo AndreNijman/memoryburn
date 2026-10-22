@@ -66,6 +66,10 @@ if (run('determinism')) {
   const a = play(MB, { seed: 1234, maxWave: 4 }), b = play(MB, { seed: 1234, maxWave: 4 }), c = play(MB, { seed: 99, maxWave: 4 });
   check('determinism: same seed, same hashes', JSON.stringify(a.hashes) === JSON.stringify(b.hashes), a.hashes.length + ' checkpoints');
   check('determinism: different seed diverges', JSON.stringify(a.hashes) !== JSON.stringify(c.hashes));
+  // Pinned final hash: catches a sim change that alters game results (perf work must keep this). Update it
+  // only when a rule change is meant to change outcomes.
+  const GOLDEN_1234 = 2768477152;
+  check('determinism: seed 1234 matches the pinned hash', a.hashes[a.hashes.length - 1] === GOLDEN_1234, String(a.hashes[a.hashes.length - 1]));
 }
 
 if (run('run')) {
