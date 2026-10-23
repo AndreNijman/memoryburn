@@ -40,6 +40,7 @@
   function shop(state, slot) {
     var p = state.players[slot], cmds = [], cash = p.cash;
     var order = p.shop.items.map(function (idx, i) { return { i: i, item: D.ITEM_POOL[idx] }; })
+      .filter(function (o) { return o.item; })
       .sort(function (a, b) { return score(b.item) - score(a.item); });
     order.forEach(function (o) { if (cash >= o.item.cost) { cmds.push({ t: 'buy', i: o.i }); cash -= o.item.cost; } });
     cmds.push({ t: 'ready' });

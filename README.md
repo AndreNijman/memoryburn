@@ -124,6 +124,7 @@ These are original behaviours. They change the balance but aren't crashes, so th
 - **Sound.** The original was silent. The port synthesizes 63 sound effects at load time and plays a procedural soundtrack: a song for each screen, district, boss and ending, all built on one four-bar motif. Fight songs add and drop layers with the fight's intensity and change district on the bar line. Each district has an ambience bed, each speaker a dialogue voice, and Options has Master, Music and Sound Effects sliders. See `docs/audio.md`.
 - A fixed 60 Hz simulation with interpolated rendering.
 - Procedural sprites and per-district floors, weather and lighting.
+- **Sold-out shop slots.** As in Brotato, a card you buy leaves its slot empty until the next contract's market or a Reroute; the original refilled it at once. Buying a locked card empties and unlocks it, so you can no longer buy the same locked card over and over.
 - A shop stats panel and per-card stat previews, computed by applying the item to a copy of the player with the real game code.
 - Gamepad and keyboard menu navigation.
 - A Resolution option. On Auto, the game renders at native resolution and lowers it when frames run slow.

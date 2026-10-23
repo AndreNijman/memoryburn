@@ -406,8 +406,16 @@
     var cw = 400, chh = 500, gap = 30, x0 = 70, y0 = 180;
     var pulse = 0.5 + 0.5 * Math.sin(app.t * 3.2);
     for (var i = 0; i < shop.items.length; i++) {
+      var x = x0 + i * (cw + gap), y = y0;
+      if (shop.items[i] == null) { // bought: the slot stays empty until the next shop or a reroute
+        UI.rr(x, y, cw, chh, 22); g.fillStyle = 'rgba(0,0,0,0.28)'; g.fill();
+        g.save(); g.setLineDash([18, 14]); g.lineWidth = 4; g.strokeStyle = '#5a4f6c'; UI.rr(x + 2, y + 2, cw - 4, chh - 4, 20); g.stroke(); g.restore();
+        UI.text('SOLD', x + cw / 2, y + chh / 2 - 20, { size: 48, align: 'center', color: '#7d7290', outlineW: 5 });
+        UI.text('Restocks next contract', x + cw / 2, y + chh / 2 + 30, { size: 24, font: 'body', align: 'center', color: '#7d7290', outline: false });
+        continue;
+      }
       var item = D.ITEM_POOL[shop.items[i]], rc = D.RARITY_COL[item.rarity];
-      var x = x0 + i * (cw + gap), y = y0, locked = !!shop.locks[i];
+      var locked = !!shop.locks[i];
       var can = p.cash >= item.cost;
       var hov = UI.hover(x, y, cw, chh);
       // rarity glow

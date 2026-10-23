@@ -22,6 +22,8 @@
  *   - a Suicide enemy dies after it bursts (the original set hp=0 but kept it alive, so it re-burst every frame)
  *   - Junk Saint's pickup_add is applied (the original never read it)
  *   - clicking a shop card's lock no longer also buys the card
+ *   - a bought card leaves its slot empty (null) until the next wave's shop or a reroll, as in Brotato;
+ *     the original refilled it at once, and kept a locked card buyable again and again
  *   - Aegis enemies walk toward the player at 70% speed (the original had no aegis movement, so they never left the edge)
  *   - pets orbit on sim time instead of the wall clock; lifesteal, enemy phase and pickup scatter use the sim RNG
  */
@@ -621,14 +623,14 @@
     if (cmd.t === 'debugCash') { p.cash += 100; return true; }
     if (state.phase === 'shop') {
       var s = p.shop, i = cmd.i;
-      if (cmd.t === 'lock' && i >= 0 && i < 3) { s.locks[i] = !s.locks[i]; ok = true; }
-      else if (cmd.t === 'buy' && i >= 0 && i < s.items.length) {
+      if (cmd.t === 'lock' && i >= 0 && i < 3 && s.items[i] != null) { s.locks[i] = !s.locks[i]; ok = true; }
+      else if (cmd.t === 'buy' && i >= 0 && i < s.items.length && s.items[i] != null) {
         var item = D.ITEM_POOL[s.items[i]];
         if (p.cash >= item.cost) {
           p.cash -= item.cost;
           applyItem(p, item); p.items.push(item.idx);
           p.hp = clamp(p.hp + 6, 0, p.max_hp);
-          if (!s.locks[i]) s.items[i] = rollItems(rng, 1, state.wave, p.luck)[0];
+          s.items[i] = null; s.locks[i] = false; // sold out until the next shop roll
           ev(state, { t: 'buy', slot: slot, item: item.idx });
           ok = true;
         }

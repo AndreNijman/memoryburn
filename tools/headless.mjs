@@ -68,7 +68,7 @@ if (run('determinism')) {
   check('determinism: different seed diverges', JSON.stringify(a.hashes) !== JSON.stringify(c.hashes));
   // Pinned final hash: catches a sim change that alters game results (perf work must keep this). Update it
   // only when a rule change is meant to change outcomes.
-  const GOLDEN_1234 = 2768477152;
+  const GOLDEN_1234 = 1236170511; // repinned: bought shop slots stay empty
   check('determinism: seed 1234 matches the pinned hash', a.hashes[a.hashes.length - 1] === GOLDEN_1234, String(a.hashes[a.hashes.length - 1]));
 }
 
@@ -110,6 +110,14 @@ if (run('shop')) {
   const dmg0 = p.damage, n0 = p.items.length;
   MB.sim.command(s, 0, { t: 'buy', i: 0 });
   check('shop: buying applies the item', p.items.length === n0 + 1);
+  check('shop: a bought slot stays empty', p.shop.items[0] === null && p.shop.items[1] === before[1]);
+  const n1 = p.items.length, cash1 = p.cash;
+  MB.sim.command(s, 0, { t: 'buy', i: 1 });
+  check('shop: buying a locked card empties and unlocks it', p.shop.items[1] === null && !p.shop.locks[1] && p.items.length === n1 + 1);
+  check('shop: an empty slot cannot be bought or locked', !MB.sim.command(s, 0, { t: 'buy', i: 0 }) && !MB.sim.command(s, 0, { t: 'lock', i: 0 }) && p.items.length === n1 + 1 && p.cash < cash1);
+  check('shop: bot skips empty slots', MB.bot.shop(s, 0).every(c => c.t !== 'buy' || p.shop.items[c.i] !== null));
+  MB.sim.command(s, 0, { t: 'reroll' });
+  check('shop: reroute restocks empty slots', p.shop.items.every(x => x !== null));
   MB.sim.command(s, 0, { t: 'ready' });
   check('shop: ready -> preview', s.phase === 'preview');
   MB.sim.command(s, 0, { t: 'deploy' });

@@ -90,6 +90,8 @@ await click(837, 621);                       // lock card 2
 check('shop: lock click locks without buying', await sim(() => MB.app.sim.players[0].shop.locks[1] && MB.app.sim.players[0].items.length === 0));
 await click(224, 620);                       // buy card 1
 check('shop: buy click buys', await sim(() => MB.app.sim.players[0].items.length === 1));
+check('shop: bought card leaves its slot empty', await sim(() => MB.app.sim.players[0].shop.items[0] === null));
+await shot('pt_shop_sold');
 await click(220, 1020);                      // reroll
 check('shop: reroll keeps the locked card', await sim(i => MB.app.sim.players[0].shop.items[1] === i, items1) || (await sim(() => MB.app.sim.players[0].shop.items[1])) === items1);
 await shot('pt_shop');
