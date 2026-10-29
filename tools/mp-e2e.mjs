@@ -165,7 +165,7 @@ async function relayProtocol(base) {
 const ANY = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts.manifest.json'), 'utf8')).filter(m => m.env === 'any').map(m => m.path);
 const STEP = 1 / 60;
 
-function makeClient(label, relayBase, version = '0.2.0') {
+function makeClient(label, relayBase, version = '0.3.0') {
   const sandbox = {
     WebSocket: class extends WebSocket { constructor(url) { super(url, { origin: ORIGIN }); } },
     fetch: (u, o) => fetch(u, Object.assign({ headers: { Origin: ORIGIN } }, o)),
@@ -284,9 +284,24 @@ async function coop(base) {
     // input forwarding, mirrors and events
     const x0 = H.sim.players[1].x;
     G1.input = { mx: 1, my: 0, aimX: 1900, aimY: 540, dash: false };
-    await sleep(900);
+    await sleep(300);
+    // own-runner prediction: the guest draws its runner ahead of its delayed mirror, about where the host has it now
+    // averaged over samples, because the mirror is sometimes only just behind when a frame has landed
+    assert.ok(G1.net.predicted() && G1.net._state.ack, 'snapshots carry the host ack for the guest');
+    let lead = 0, dPred = 0, dMir = 0;
+    for (let k = 0; k < 10; k++) {
+      const q = G1.net.predicted(), m = G1.sim.players[1].x, hx = H.sim.players[1].x;
+      lead += (q.x - m) / 10; dPred += Math.abs(q.x - hx) / 10; dMir += Math.abs(m - hx) / 10;
+      await sleep(20);
+    }
+    assert.ok(lead > 15, 'prediction leads the mirror while moving: ' + lead);
+    assert.ok(dPred < dMir && dPred < 80, 'prediction is nearer the host position than the mirror: ' + dPred + ' vs ' + dMir);
+    const p2 = G2.net.predicted();
+    assert.ok(!p2 || Math.abs(p2.x - G2.sim.players[2].x) < 5, 'a guest standing still is drawn where the host has it');
+    await sleep(400);
     assert.ok(H.sim.players[1].x > x0 + 60, 'the host moves the guest runner from forwarded input: ' + x0 + ' -> ' + H.sim.players[1].x);
     G1.input = { mx: 0, my: 0, aimX: 1900, aimY: 540 };
+    await until(() => { const q = G1.net.predicted(); return !q || Math.abs(q.x - G1.sim.players[1].x) < 5; }, 'prediction settles onto the mirror once the runner stops');
     await sleep(300);
     assert.ok(Math.abs(G2.sim.players[1].x - H.sim.players[1].x) < 40, 'the other guest sees it: ' + G2.sim.players[1].x + ' vs ' + H.sim.players[1].x);
     assert.ok(Math.abs(G2.sim.tick - H.sim.tick) < 30, 'mirror tick is close behind the host: ' + G2.sim.tick + ' vs ' + H.sim.tick);

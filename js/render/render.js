@@ -5,7 +5,8 @@
  *
  *   MB.render.snapshot(state) -> prev     positions to interpolate from (call before each sim step)
  *   MB.render.world(g, state, prev, alpha, t, opts)
- *        alpha: 0..1 between prev and state; t: render clock in seconds; opts: {rangeRing, localSlot}
+ *        alpha: 0..1 between prev and state; t: render clock in seconds; opts: {rangeRing, localSlot, names, own}
+ *        own: {slot, x, y, p} draws that runner at a predicted spot instead (MB.net.predicted on a co-op guest)
  */
 (function () {
   'use strict';
@@ -175,7 +176,12 @@
     // y-sorted actors
     var na = 0;
     for (i = 0; i < state.enemies.length; i++) { var e0 = state.enemies[i]; lerp(prev, 'e' + e0.id, e0.x, e0.y, a); actor(na++, LX, LY, 0, e0); }
-    for (i = 0; i < state.players.length; i++) { var p0 = state.players[i]; if (!p0.alive) continue; lerp(prev, 'p' + p0.slot, p0.x, p0.y, a); actor(na++, LX, LY, 1, p0); }
+    for (i = 0; i < state.players.length; i++) {
+      var p0 = state.players[i];
+      if (!p0.alive) continue;
+      if (opts.own && opts.own.slot === p0.slot) { actor(na++, opts.own.x, opts.own.y, 1, opts.own.p); continue; } // co-op guest prediction
+      lerp(prev, 'p' + p0.slot, p0.x, p0.y, a); actor(na++, LX, LY, 1, p0);
+    }
     actors.length = na;
     actors.sort(byY);
     for (i = 0; i < na; i++) {

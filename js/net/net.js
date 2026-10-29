@@ -29,6 +29,7 @@
   'use strict';
   var D = MB.data;
   var DEFAULT_RELAY = 'wss://relay.memoryburn.andrenijman.com'; // same worker as memoryburn-relay.tung-tung-tung-sahur.workers.dev
+  var STEP = D.STEP, MAX_REPLAY = 45; // replay at most 0.75 s of own input, so a stalled host can't run the runner away
   var PROTO = 1, MAX_PLAYERS = 4, SNAP_HZ = 20, IDLE_SNAP_HZ = 5, INPUT_HZ = 30, FULL_EVERY = 5, INTERP_DELAY = 0.1;
   var GUEST_CMDS = { buy: 1, lock: 1, reroll: 1, ready: 1, deploy: 1 };
   var W = D.VIRTUAL_W, H = D.VIRTUAL_H;
@@ -44,6 +45,9 @@
     // guest
     frames: [], cur: null, curStart: 0, off: null, lastSnapAt: 0, reqAt: -99, prevPos: null, alpha: 1, sendIn: { key: '', at: -9, seq: 0 },
     hostEpoch: 0, hold: 0,
+    // own-runner prediction: local steps not yet applied by the host, the host's ack for the shown frame, and the
+    // correction still being smoothed out
+    steps: [], stepAcc: 0, ack: null, err: { x: 0, y: 0 },
     reconnect: { timer: null, tries: 0 },
     on: { lobby: [], start: [], closed: [], error: [], reset: [], frame: [], toast: [] }
   };
@@ -104,6 +108,7 @@
     S.evOut = []; S.snapT = 0; S.forceSnap = true; S.sheetT = 0; S.sheetKey = {}; S.sheetAt = {}; S.forceSheet = true; S.fullT = 0;
     S.go = {}; S.gateOpen = false; S.gateT = 0; S.waveSent = -1; S.fullPhase = '';
     S.frames = []; S.cur = null; S.off = null; S.prevPos = null; S.alpha = 1; S.hold = 0; S.lastSnapAt = S.clock;
+    S.steps = []; S.stepAcc = 0; S.ack = null; S.err = { x: 0, y: 0 };
   }
 
   function connect(create, o, reconnecting) {
@@ -346,7 +351,7 @@
       dash: !!(b & 1), fire: !!(b & 2), manual: !!(b & 4)
     };
     if (b & 1) peer.dashPend = true;
-    peer.lastIn = S.clock; peer.zeroed = false;
+    peer.lastIn = S.clock; peer.zeroed = false; peer.seq = m.s | 0;
   }
 
   function onCmd(from, m) {
@@ -494,15 +499,26 @@
     if (!latest) return;
     var calm = latest.run.ph !== 0; // shop, briefing, game over: nothing moves, so show the newest frame at once
     var rt = calm ? Infinity : S.clock + S.off - INTERP_DELAY;
-    var applied = 0;
+    var applied = 0, before = null;
     while (S.frames.length && (!S.cur || rt >= S.cur.time)) {
       var f = S.frames.shift();
+      if (!applied) before = predictRaw(sim);
       S.curStart = S.cur ? S.cur.time : f.time;
       S.prevPos = MB.render.snapshot(sim);
       MB.snap.applyFrame(sim, f);
       S.cur = f; S.hold = f.hold;
+      S.ack = f.run.ia && f.run.ia[S.localSlot] ? f.run.ia[S.localSlot] : null;
       fire('frame', f);
       if (++applied > 30) break;
+    }
+    if (applied) {
+      // steps older than the host's ack are in the frame now; keep the prediction where it was and ease the difference out
+      if (S.ack) { var a0 = S.ack[0], k0 = 0; while (k0 < S.steps.length && S.steps[k0].s < a0) k0++; if (k0) S.steps.splice(0, k0); }
+      var after = before && predictRaw(sim);
+      if (after) {
+        S.err.x += before.x - after.x; S.err.y += before.y - after.y;
+        if (Math.abs(S.err.x) + Math.abs(S.err.y) > 160) { S.err.x = 0; S.err.y = 0; } // too far to glide: snap
+      }
     }
     if (!S.cur) return;
     var span = S.cur.time - S.curStart;
@@ -576,6 +592,13 @@
       var m = MB.snap.encode(sim, S.evOut);
       S.evOut = [];
       m.ep = S.epoch; m.hd = S.gateOpen ? 0 : holding();
+      // per slot: the newest input sequence the sim has used and how many steps it has run it, for guest prediction
+      var ia = null;
+      for (i = 0; i < ids.length; i++) {
+        var sl = S.slots[ids[i]], pr = S.peers[ids[i]];
+        if (sl && sl.slot >= 0 && pr && pr.ackSeq) { ia = ia || {}; ia[sl.slot] = [pr.ackSeq, pr.ackN]; }
+      }
+      if (ia) m.ia = ia;
       send(m);
     }
     S.sheetT += dt;
@@ -595,8 +618,47 @@
     if (S.fullT >= FULL_EVERY) { S.fullT = 0; var nh = nextHostId(); if (nh) sendFull(nh); }
   }
 
+  /* ------------------------------------------------------------------ guest: own-runner prediction */
+  // The host shows us our runner after a full round trip plus the interpolation delay. To hide that, every local
+  // fixed step is recorded with the input last sent (the host steps with exactly that), and the runner is drawn at the
+  // shown frame's position with the steps the host hasn't used yet replayed through MB.sim.move on a copy.
+  function ownPlayer(sim) {
+    if (!sim || !sim.remote || S.spectator || S.state !== 'running') return null;
+    var p = sim.players[S.localSlot];
+    return p && p.alive && sim.phase === 'play' ? p : null;
+  }
+  function recordStep(dt) {
+    var sim = hooks.getSim(), p = ownPlayer(sim);
+    if (!p || S.hold || !S.sendIn.inp || S.clock - S.lastSnapAt > 0.5) { S.steps.length = 0; S.stepAcc = 0; S.err.x = 0; S.err.y = 0; return; }
+    S.stepAcc = Math.min(S.stepAcc + dt, STEP * 8);
+    while (S.stepAcc >= STEP) { S.stepAcc -= STEP; S.steps.push({ s: S.sendIn.seq, inp: S.sendIn.inp }); }
+    if (S.steps.length > MAX_REPLAY * 2) S.steps.splice(0, S.steps.length - MAX_REPLAY * 2);
+  }
+  function predictRaw(sim) {
+    var p = ownPlayer(sim);
+    if (!p || !S.ack || !S.steps.length) return null;
+    var seq = S.ack[0], skip = S.ack[1], i = 0, prevDash = false;
+    // skip what the host already stepped: older sequences, then ackN steps from the acked one on. The count runs on past
+    // the acked sequence because the host keeps stepping an input until the next one arrives, while we tag steps with
+    // the newer one from the moment we send it
+    while (i < S.steps.length && S.steps[i].s < seq) { prevDash = S.steps[i].inp.dash; i++; }
+    while (i < S.steps.length && skip-- > 0) { prevDash = S.steps[i].inp.dash; i++; }
+    if (S.steps.length - i > MAX_REPLAY) i = S.steps.length - MAX_REPLAY;
+    var q = {
+      x: p.x, y: p.y, vx: p.vx, vy: p.vy, speed: p.speed, dash_cd: p.dash_cd, dash_cd_max: p.dash_cd_max, dash_time: p.dash_time,
+      dash_speed: p.dash_speed, dashing: p.dashing, dash_t: p.dashing ? p.dash_time * 0.5 : 0, dash_dx: p.dash_dx, dash_dy: p.dash_dy,
+      dash_prev: prevDash, iframe: 0, aimX: p.aimX, aimY: p.aimY
+    };
+    var dt = STEP * sim.settings.gameSpeed;
+    for (; i < S.steps.length; i++) { var inp = S.steps[i].inp; MB.sim.move(sim, q, inp, dt); q.aimX = inp.aimX; q.aimY = inp.aimY; }
+    return q;
+  }
+
   function guestTick(dt) {
     advanceFrames();
+    recordStep(dt);
+    var decay = Math.exp(-dt * 10);
+    S.err.x *= decay; S.err.y *= decay;
     if (S.state === 'running' && S.clock - S.lastSnapAt > 4 && S.clock - S.reqAt > 4) { S.reqAt = S.clock; send({ t: 'snapshot-request' }); }
     void dt;
   }
@@ -735,6 +797,8 @@
       if (!peer || !peer.inp) return {};
       var inp = peer.inp, out = { mx: inp.mx, my: inp.my, aimX: inp.aimX, aimY: inp.aimY, fire: inp.fire, manual: inp.manual, dash: inp.dash || peer.dashPend };
       peer.dashPend = false; // a tap shorter than one host step still dashes exactly once
+      if (peer.ackSeq !== peer.seq) { peer.ackSeq = peer.seq; peer.ackN = 0; }
+      peer.ackN++;
       return out;
     },
     hostEvents: function (evs) {
@@ -765,6 +829,7 @@
       var dashEdge = (b & 1) && !(si.b & 1);
       if (!dashEdge && (key === si.key ? age < 0.25 : age < 1 / INPUT_HZ)) return;
       si.key = key; si.at = S.clock; si.b = b; si.seq++;
+      si.inp = { mx: mx / 100, my: my / 100, aimX: ax, aimY: ay, dash: !!(b & 1) }; // what the host will step with
       send({ t: 'in', s: si.seq, mx: mx, my: my, ax: ax, ay: ay, b: b });
     },
     sendCmd: function (cmd) {
@@ -773,6 +838,15 @@
       return true;
     },
     view: function () { return { prev: S.prevPos, alpha: S.alpha }; },
+    // where to draw our own runner: {slot, x, y, p} with p a stand-in for the mirror player, or null to draw it as is
+    predicted: function () {
+      var sim = hooks.getSim(), q = predictRaw(sim);
+      if (!q) return null;
+      var o = Object.create(sim.players[S.localSlot]);
+      o.x = q.x + S.err.x; o.y = q.y + S.err.y; o.vx = q.vx; o.vy = q.vy; o.aimX = q.aimX; o.aimY = q.aimY;
+      o.dashing = q.dashing; o.dash_dx = q.dash_dx; o.dash_dy = q.dash_dy;
+      return { slot: S.localSlot, x: o.x, y: o.y, p: o };
+    },
 
     tick: function (dt) {
       dt = clamp(+dt || 0, 0, 0.25);

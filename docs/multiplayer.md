@@ -18,7 +18,12 @@ Online co-op for one to four players. It follows broIsAPotato's design: one host
 - **Guests keep a mirror.** A guest never steps. `app.sim` holds an object shaped like sim state (`MB.snap.newMirror`), and snapshots overwrite it. The renderer, HUD and shop read it like a local run. Guests draw about 100 ms behind the host and interpolate between the two newest snapshots. A snapshot's events (shots, hits, kills, pickups, radio triggers) play when that snapshot is shown.
 - **Guests send commands.** On a guest, `app.cmd` sends `{t:'cmd', cmd}` to the host. The host accepts only `buy`, `lock`, `reroll`, `ready` and `deploy` (with `i` from 0 to 2), limits each guest to a rate, runs the command for that guest's slot and acks it. After a command it pushes a fresh snapshot and player sheet at once, so the shop on the guest updates in about one round trip.
 - **The run doesn't stop for menus.** On the host the sim steps on every in-run screen, including pause, the shop of a player who has already readied, and the ending story. Losing window focus doesn't pause a co-op run. While the host's tab is hidden, browsers stop `requestAnimationFrame`, so a worker timer drives `update()` instead.
-- **Own-runner prediction:** none. A guest sees their own runner at the host's position about 100 ms late, plus their round trip to the relay. That is fine on a normal connection and noticeable on a bad one. Adding prediction means replaying unacknowledged inputs on the mirror (`in.s` already numbers them).
+- **Own-runner prediction.** Without it, a guest would see their own runner about 100 ms late, plus the round trip through the relay.
+  - **Recording.** The guest records every local 60 Hz step, tagged with the last input it sent (`in.s`), because that is the input the host steps with.
+  - **Acks.** Each snapshot carries `ia`: for every guest slot, the newest input sequence the host's sim has used and how many steps it has run since.
+  - **Replay.** The guest draws its runner at the shown frame's position, then replays the steps the host hasn't taken yet through `MB.sim.move`. That is the sim's own movement and dash code, run on a copy of the player.
+  - **Corrections.** When a new frame changes the answer, the difference eases out over about 0.1 s. A jump of more than 160 px snaps.
+  - **Limits.** Replay is capped at 0.75 s and stops when snapshots stop, so a stalled host can't run the runner away. Only movement is predicted: the guest's bullets still leave from where the host has the runner.
 
 ### The story gate
 
@@ -32,11 +37,16 @@ After the host presses Start, everyone gets the opening story unless they turned
 | A guest's connection goes quiet without closing | During a run the host sends at least 5 frames a second. If a guest hears nothing for 8 s (a sleeping laptop, a network switch), it drops the socket itself and rejoins. If the relay still lists the old socket, the host hands the runner from that stale entry to the new connection when the name and tab token match. |
 | A guest leaves or doesn't come back | Their slot becomes an orphan. The autopilot moves, shoots, shops and readies for it. |
 | The same name rejoins from the same tab | It gets the slot back. The tab token lives in `sessionStorage`. After a host migration nobody knows the tokens, so the name alone counts. |
-| Anyone else joins a running game | They spectate: they see the run and their inputs are ignored. Back in the lobby they get a free seat. |
+| Anyone else joins a running game | They spectate: they see the run and their inputs are ignored. Their market shows the first runner's cards, labelled, with buying turned off. Back in the lobby they get a free seat. |
 | The host leaves | The relay promotes the player who joined next. That player restores the newest full backup and becomes the host. The host sends a full `JSON.stringify(sim)` every 5 s, in chunks, to the next-in-line guest. The old host's runner goes to the autopilot. Snapshots carry an epoch (the host's relay id), so guests clear their frame buffer when the host changes. If the backup is more than 20 s old, the run ends. |
-| The host's own connection drops | The host keeps playing offline, and the autopilot takes over the other runners. |
+| The host's own connection drops | The host keeps playing offline, and the autopilot takes over the other runners. A host socket that goes quiet for 8 s without closing counts as dropped. |
+| The host stops sending (a sleeping laptop, a frozen tab) | Guests keep their connection, because the relay still answers their pings. After 3 s without a snapshot the HUD shows "Host not responding…". |
 | The game versions differ | Every `hello` carries `app.version + '/' + MB.dataHash()`. The host kicks a guest whose value doesn't match theirs, and the guest is told to refresh. |
 | Game over | The host can take everyone back to the lobby with a `reset` frame. The relay reopens the room for a new start, keeping the same code and crew. |
+
+### Settings
+
+Game Speed and Damage Taken come from the host and apply to the whole crew. On a guest, Options shows the host's values instead of the sliders.
 
 ## Wire format
 
@@ -68,8 +78,8 @@ Guests send input at up to 30 Hz, plus at once on a dash press. Unchanged input 
 | `reset` | (none) |
 | `kick` | `{reason}` |
 | `ack` | `{id, ok, err}` |
-| `snap` | `MB.snap.encode` output, plus `ep` (the epoch) and `hd` (how many runners the story gate is waiting for) |
-| `pst` | `{p:[sheet]}`, the whole player except live positions: stats, items, shop, cash, ready |
+| `snap` | `MB.snap.encode` output, plus `ep` (the epoch), `hd` (how many runners the story gate is waiting for) and `ia` (`{slot: [input seq, steps run with it]}` for guest prediction) |
+| `pst` | `{p:[sheet]}`, the player minus everything the `P` row carries every frame (position, velocity, aim, hp, dash and fire timers, materials): stats, items, shop, cash, ready |
 
 Snapshots go out at 20 Hz during a contract and 5 Hz otherwise. Players, pets, enemies, bullets, enemy bullets and pickups travel as rows of integers. The row layouts are documented at the top of `js/net/snapshot.js`. A crowded wave 12 with three players comes to about 10 KB. Player sheets go out when they change (checked 4 times a second), and every 3 s anyway.
 
@@ -118,6 +128,7 @@ MB_RELAY=wss://relay.memoryburn.andrenijman.com node tools/mp-e2e.mjs   # the sa
 - input forwarding and dash latching
 - guest commands and the command whitelist
 - shop, ready and deploy into contract 2
+- own-runner prediction leading the delayed mirror and settling onto it once the runner stops
 - a guest whose socket dies reconnecting on its own, and the silence watchdog rejoining while the relay still holds the old socket
 - the autopilot taking a dropped runner, and a same-name rejoin
 - a spectator

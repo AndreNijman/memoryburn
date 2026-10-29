@@ -94,7 +94,18 @@ try {
 
   // guest input moves the host's copy of the guest runner
   const x0 = await A.ev(() => MB.app.sim.players[1].x);
-  await B.page.keyboard.down('KeyD'); await wait(700); await B.page.keyboard.up('KeyD');
+  await B.page.keyboard.down('KeyD'); await wait(300);
+  // own-runner prediction: averaged over a few samples, the guest draws its runner nearer the host's live position
+  // than its delayed mirror is (on localhost the mirror is only a frame or two behind)
+  let dPred = 0, dMir = 0, nPred = 0;
+  for (let k = 0; k < 10; k++) {
+    const g = await B.ev(() => { const q = MB.net.predicted(); return { q: q && q.x, m: MB.app.sim.players[1].x }; });
+    const hx = await A.ev(() => MB.app.sim.players[1].x);
+    if (g.q != null) { nPred++; dPred += Math.abs(g.q - hx); } dMir += Math.abs(g.m - hx);
+    await wait(30);
+  }
+  check('guest: own runner is drawn ahead of the delayed mirror', nPred === 10 && dPred < dMir, nPred + ' samples, ' + Math.round(dPred / 10) + ' vs ' + Math.round(dMir / 10) + ' px from the host');
+  await B.page.keyboard.up('KeyD');
   const x1 = await A.ev(() => MB.app.sim.players[1].x);
   check('guest: D moves their runner on the host', x1 > x0 + 80, Math.round(x0) + ' -> ' + Math.round(x1));
   await wait(300);

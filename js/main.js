@@ -39,7 +39,7 @@
   /* ------------------------------------------------------------------ app */
   var ATTRACT_SCREENS = { menu: 1, options: 1, chars: 1, difficulty: 1 };
   var app = MB.app = {
-    version: '0.2.0', screen: 'menu', screenT: 0, t: 0, menuT0: 0,
+    version: '0.3.0', screen: 'menu', screenT: 0, t: 0, menuT0: 0,
     settings: loadSettings(), debug: params.has('debug'),
     sim: null, slot: 0, prev: null, alpha: 1, acc: 0,
     arch: 0, difficulty: 'Normal', pauseTab: 0, story: null, ending: null, bannerT: 0, deathT: 0,
@@ -317,7 +317,8 @@
       var sh = R.fx.shake();
       g.save(); g.translate(sh[0], sh[1]);
       R.world(g, ws, att ? attract.prev : app.prev, att ? attract.alpha : app.alpha, app.t,
-        { rangeRing: !att && app.settings.rangeRing && app.screen === 'play', localSlot: att ? -1 : app.slot, names: !att && app.coop ? MB.net.nameOf : null });
+        { rangeRing: !att && app.settings.rangeRing && app.screen === 'play', localSlot: att ? -1 : app.slot, names: !att && app.coop ? MB.net.nameOf : null,
+          own: !att && ws.remote ? MB.net.predicted() : null });
       g.restore();
     }
     UI.begin(g, dt);

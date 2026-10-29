@@ -14,6 +14,7 @@
  *   MB.sim.step(state, inputs)   inputs[slot] = {mx, my, dash, aimX, aimY, fire, manual}
  *   MB.sim.command(state, slot, cmd)   cmd.t: buy|lock|reroll|ready|deploy|debugSkip|debugCash
  *   MB.sim.hash(state) -> uint32
+ *   MB.sim.move(state, player, input, dt) -> dashed   one step of movement only (co-op prediction replays it)
  *
  * state.events is a transient list of {t, ...} for render/audio (hit, block, kill, crit, hurt, shoot,
  * portal, pickup, burst, dash, waveEnd, death). It is cleared at the start of every step and is not hashed.
@@ -77,10 +78,10 @@
     return best;
   }
 
-  function updatePlayer(state, p, inp, dt) {
-    var b = biomeOf(state);
-    if (p.iframe > 0) p.iframe = Math.max(0.0, p.iframe - dt);
-    if (p.health_regen > 0 && p.hp > 0) p.hp = clamp(p.hp + p.health_regen * dt, 0, p.max_hp);
+  // Movement and dashing only, so a co-op guest can replay its own unacknowledged inputs (MB.sim.move) on a copy of
+  // its runner. Returns true when a dash starts.
+  function movePlayer(state, p, inp, dt) {
+    var b = biomeOf(state), dashed = false;
     var dx = inp.mx || 0, dy = inp.my || 0, l = U.len(dx, dy);
     if (l > 0) { dx /= l; dy /= l; }
     var spd_mul = (b.player_spd_mul != null ? b.player_spd_mul : 1.0) * state.jungleSlow;
@@ -95,7 +96,7 @@
         if (al > 0) { p.dash_dx = ax / al; p.dash_dy = ay / al; } else { p.dash_dx = 1; p.dash_dy = 0; }
       }
       p.dashing = true; p.dash_t = p.dash_time; p.dash_cd = p.dash_cd_max; p.iframe = Math.max(p.iframe, p.dash_time + 0.3);
-      ev(state, { t: 'dash', slot: p.slot, x: p.x, y: p.y, dx: p.dash_dx, dy: p.dash_dy });
+      dashed = true;
     }
     p.dash_prev = dashKey;
     if (p.dashing) {
@@ -109,6 +110,14 @@
     } else { p.vx = tvx; p.vy = tvy; }
     p.x += p.vx * dt; p.y += p.vy * dt;
     p.x = clamp(p.x, 18, W - 18); p.y = clamp(p.y, 18, H - 18);
+    return dashed;
+  }
+
+  function updatePlayer(state, p, inp, dt) {
+    if (p.iframe > 0) p.iframe = Math.max(0.0, p.iframe - dt);
+    if (p.health_regen > 0 && p.hp > 0) p.hp = clamp(p.hp + p.health_regen * dt, 0, p.max_hp);
+    var x0 = p.x, y0 = p.y;
+    if (movePlayer(state, p, inp, dt)) ev(state, { t: 'dash', slot: p.slot, x: x0, y: y0, dx: p.dash_dx, dy: p.dash_dy });
     if (p.cooldown > 0) p.cooldown -= dt * p.attack_speed;
     if (inp.aimX != null) { p.aimX = inp.aimX; p.aimY = inp.aimY; }
   }
@@ -685,7 +694,7 @@
   }
 
   MB.sim = {
-    create: create, step: step, command: command, hash: hash,
+    create: create, step: step, command: command, hash: hash, move: movePlayer,
     previewLines: previewLines, rollItems: rollItems, applyItem: applyItem, difficultyMul: difficultyMul,
     PLAYER_SIZE: PLAYER_SIZE
   };
