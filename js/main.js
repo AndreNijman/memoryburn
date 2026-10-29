@@ -65,7 +65,7 @@
     var s = app.settings;
     UI.textScale = s.textSize / 100;
     MB.audio.setVolumes(s);
-    if (app.sim) { app.sim.settings.gameSpeed = s.gameSpeed / 100; app.sim.settings.dmgTaken = s.dmgTaken / 100; }
+    if (app.sim && !app.sim.remote) { app.sim.settings.gameSpeed = s.gameSpeed / 100; app.sim.settings.dmgTaken = s.dmgTaken / 100; } // a guest shows the host's
   };
   app.saveSettings = function () {
     var j = JSON.stringify(app.settings);

@@ -97,8 +97,17 @@
     s.uiScale = UI.slider('o:ui', 'HUD Scale', s.uiScale, 75, 140, 5, x2, yy, colW, pct); yy += step;
     s.textSize = UI.slider('o:text', 'Text Size', s.textSize, 80, 140, 5, x2, yy, colW, pct); yy += step;
     s.vfx = UI.slider('o:vfx', 'VFX Intensity', s.vfx, 50, 150, 5, x2, yy, colW, pct); yy += step;
-    s.gameSpeed = UI.slider('o:speed', 'Game Speed', s.gameSpeed, 60, 120, 5, x2, yy, colW, pct); yy += step;
-    s.dmgTaken = UI.slider('o:taken', 'Damage Taken', s.dmgTaken, 50, 150, 5, x2, yy, colW, pct); yy += step;
+    if (app.coop && MB.net.role() === 'guest') { // the host's run settings apply to the whole crew
+      var hs = app.sim ? app.sim.settings : { gameSpeed: 1, dmgTaken: 1 };
+      [['Game Speed', hs.gameSpeed], ['Damage Taken', hs.dmgTaken]].forEach(function (r) {
+        UI.text(r[0], x2 + 6, yy + 29, { size: 26, font: 'body', color: C.dim, outline: false });
+        UI.text(Math.round(r[1] * 100) + '%  ·  set by the host', x2 + colW, yy + 29, { size: 24, font: 'body', align: 'right', color: '#7d7290', outline: false });
+        yy += step;
+      });
+    } else {
+      s.gameSpeed = UI.slider('o:speed', 'Game Speed', s.gameSpeed, 60, 120, 5, x2, yy, colW, pct); yy += step;
+      s.dmgTaken = UI.slider('o:taken', 'Damage Taken', s.dmgTaken, 50, 150, 5, x2, yy, colW, pct); yy += step;
+    }
     s.fpsCap = UI.slider('o:fps', 'FPS Cap', s.fpsCap, 0, 240, 10, x2, yy, colW, function (v) { return v === 0 ? 'Vsync' : String(v); }); yy += step;
     // the left end of the track is Auto (stored as 0); fixed scales run 40-100%
     var res = UI.slider('o:res', 'Resolution', s.resolution || 30, 30, 100, 10, x2, yy, colW, function (v) { return v === 30 ? 'Auto' : v + '%'; }); yy += step;
@@ -414,6 +423,7 @@
       UI.text('The crew has to finish the contract. Doc patches you up at the market.', VW / 2, cy - 110, { size: 30, font: 'body', align: 'center', color: C.text });
     }
     var net = MB.net;
+    if (net.hostQuiet() > 3) UI.text('Host not responding…', VW / 2, 240, { size: 30, align: 'center', color: '#ff9a3c', outlineW: 5 });
     if (net.role() === 'offline') UI.text('OFFLINE  ·  autopilot runs the crew', VW / 2, 200, { size: 22, align: 'center', color: '#ff9a3c', outlineW: 5 });
     else UI.text(net.lobby ? net.lobby.code + '  ·  ' + net.rtt + ' ms' : '', 24, H / (app.settings.uiScale / 100) - 56, { size: 18, font: 'body', color: '#9b90ac', outline: false });
   }
@@ -434,8 +444,9 @@
   /* ------------------------------------------------------------------ shop */
   SC.shop = function (app, g) {
     var st = app.sim, p = st.players[app.slot], shop = p.shop;
+    var spec = app.coop && MB.net.isSpectator(); // a spectator sees the first runner's market and can't buy
     backdrop(g, 0.82);
-    UI.text('Back-Alley Market', 70, 84, { size: 66 });
+    UI.text(spec ? 'Watching ' + MB.net.nameOf(app.slot) + "'s market" : 'Back-Alley Market', 70, 84, { size: 66 });
     UI.text('Wave ' + st.wave + ' cleared', 74, 136, { size: 26, font: 'body', color: C.dim, outline: false });
     // eddies
     S.draw(g, 'hud:coin', 1180, 92, { scale: 1.6 });
@@ -470,7 +481,7 @@
       UI.rr(lx, ly, 74, 74, 13); g.fillStyle = locked ? '#7a5a14' : (lh ? '#5a4f6c' : '#3d3350'); g.fill();
       if (locked) { g.lineWidth = 4; g.strokeStyle = P.yellow; UI.rr(lx + 2, ly + 2, 70, 70, 11); g.stroke(); }
       S.draw(g, locked ? 'hud:lock' : 'hud:unlock', lx + 37, ly + 39, { scale: 1.3, alpha: locked || lh ? 1 : 0.75 });
-      if (lh && IN.mouse.clicked) { MB.audio.ui(locked ? 'unlock' : 'lock'); app.cmd({ t: 'lock', i: i }); }
+      if (lh && IN.mouse.clicked && !spec) { MB.audio.ui(locked ? 'unlock' : 'lock'); app.cmd({ t: 'lock', i: i }); }
       // description + deltas
       var dl = UI.wrap(item.desc, cw - 52, 26, 'body');
       dl.forEach(function (ln, k) { UI.text(ln, x + 26, y + 196 + k * 34, { size: 26, font: 'body', color: C.text, outline: false }); });
@@ -482,7 +493,7 @@
       });
       if (hov && !lh) hoverDeltas = deltas;
       // buy
-      if (UI.button('s:buy' + i, String(item.cost), x + 26, y + chh - 96, cw - 52 - 92, 74, { tone: can ? 'primary' : 'danger', disabled: !can, icon: 'hud:coin', size: 38 })) app.cmd({ t: 'buy', i: i });
+      if (UI.button('s:buy' + i, String(item.cost), x + 26, y + chh - 96, cw - 52 - 92, 74, { tone: can ? 'primary' : 'danger', disabled: !can || spec, icon: 'hud:coin', size: 38 })) app.cmd({ t: 'buy', i: i });
     }
     // owned items
     var iy = 730;
@@ -503,7 +514,7 @@
     if (lq) msg += '   ·   Side-job ' + (lq.done ? 'paid +₵' + lq.reward : 'failed');
     UI.text(msg, 72, 948, { size: 24, font: 'body', color: lq && lq.done ? P.green : C.dim, outline: false });
     // reroll + start
-    if (UI.button('s:reroll', 'Reroute  5', 70, 980, 300, 80, { icon: 'hud:coin', size: 32, disabled: p.cash < 5 })) app.cmd({ t: 'reroll' });
+    if (UI.button('s:reroll', 'Reroute  5', 70, 980, 300, 80, { icon: 'hud:coin', size: 32, disabled: p.cash < 5 || spec })) app.cmd({ t: 'reroll' });
     var waiting = p.ready && st.players.some(function (o) { return !o.ready; });
     if (app.coop && !MB.net.isSpectator()) crewStatus(app, st, 1400 + 230, 940);
     if (MB.net.isSpectator()) UI.text('Spectating', 1630, 1012, { size: 36, align: 'center', color: P.cyan });

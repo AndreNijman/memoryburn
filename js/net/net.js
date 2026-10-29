@@ -597,14 +597,6 @@
 
   function guestTick(dt) {
     advanceFrames();
-    // the host sends at least 5 snapshots a second during a run; silence this long means the socket is dead even
-    // if the browser hasn't noticed (sleeping laptop, switched network), so drop it and rejoin
-    if (S.state === 'running' && S.ws && S.ws.readyState === 1 && S.clock - S.heardAt > 8) {
-      var dead = S.ws;
-      try { dead.onclose = null; dead.onmessage = null; dead.close(4000, 'silent'); } catch (e) { /* gone */ }
-      if (S.ws === dead) onClose({ reason: 'silent' });
-      return;
-    }
     if (S.state === 'running' && S.clock - S.lastSnapAt > 4 && S.clock - S.reqAt > 4) { S.reqAt = S.clock; send({ t: 'snapshot-request' }); }
     void dt;
   }
@@ -660,6 +652,8 @@
     role: function () { return S.role; },
     relayUrl: relayUrl,
     isSpectator: function () { return S.spectator; },
+    // seconds since a guest last got a snapshot during a run (0 for the host and outside a run)
+    hostQuiet: function () { return S.role === 'guest' && S.state === 'running' ? S.clock - S.lastSnapAt : 0; },
     localSlot: function () { return S.localSlot | 0; },
     inRun: function () { return S.state === 'running' && (S.role === 'host' || S.role === 'guest'); },
     holding: holding,
@@ -786,6 +780,13 @@
       if (S.ws && S.ws.readyState === 1) {
         S.pingT -= dt;
         if (S.pingT <= 0) { S.pingT = 2.5; send({ t: 'ping', c: S.clock }); }
+        // the relay answers a ping every 2.5 s, so silence this long means the socket is dead even if the browser hasn't
+        // noticed (sleeping laptop, switched network): drop it, and a guest rejoins while the host carries on offline
+        if (S.state === 'running' && S.clock - S.heardAt > 8) {
+          var dead = S.ws;
+          try { dead.onclose = null; dead.onmessage = null; dead.close(4000, 'silent'); } catch (e) { /* gone */ }
+          if (S.ws === dead) onClose({ reason: 'silent' });
+        }
       }
       if (S.role === 'host') hostTick(dt);
       else if (S.role === 'guest') guestTick(dt);
