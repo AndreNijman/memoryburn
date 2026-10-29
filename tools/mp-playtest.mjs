@@ -1,5 +1,7 @@
 // Two-browser co-op playtest through real clicks and keys, against a local relay (or MB_RELAY).
 //   node tools/mp-playtest.mjs [--shots=dir]      exit code is non-zero on any failure or page error
+//   MB_URL='https://memoryburn.andrenijman.com/?_games_frame=1' MB_RELAY=wss://relay.memoryburn.andrenijman.com node tools/mp-playtest.mjs
+//                                                   the deployed game (the frame games-guard wraps it in) against the deployed relay
 // Host and guest are separate browser contexts (separate storage, like two machines). The host creates a lobby from
 // the Co-op screen, the guest joins by typing the code, picks a runner and readies, the host starts; the story gate
 // holds the run until the guest finishes the intro; the guest moves the host's copy of their runner, buys in the
@@ -26,8 +28,9 @@ let browser;
 try {
   const relay = await startRelay();
   console.log('relay at', relay);
-  browser = await pw.chromium.launch();
-  const url = pathToFileURL(path.join(ROOT, 'index.html')).href + '?debug&relay=' + encodeURIComponent(relay);
+  browser = await pw.chromium.launch({ args: process.env.MB_CHROMIUM_ARG ? [process.env.MB_CHROMIUM_ARG] : [] }); // e.g. a --host-resolver-rules override
+  const page0 = process.env.MB_URL || pathToFileURL(path.join(ROOT, 'index.html')).href;
+  const url = page0 + (page0.includes('?') ? '&' : '?') + 'debug&relay=' + encodeURIComponent(relay);
   const errors = [];
   async function open(label, skipStory) {
     const ctx = await browser.newContext({ viewport: { width: 1920, height: 1080 } });

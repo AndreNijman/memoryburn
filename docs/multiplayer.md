@@ -117,7 +117,11 @@ node tools/headless.mjs      # 'net' group: snapshot round trip into a mirror, e
 node tools/mp-e2e.mjs        # relay protocol with raw sockets, then three vm clients running the real sim + net.js
 node tools/mp-playtest.mjs   # two Chromium contexts: host, join by typed code, story gate, move, shop, deploy, drop out
 MB_RELAY=wss://relay.memoryburn.andrenijman.com node tools/mp-e2e.mjs   # the same against production
+MB_URL='https://memoryburn.andrenijman.com/?_games_frame=1' MB_RELAY=wss://relay.memoryburn.andrenijman.com node tools/mp-playtest.mjs
+                             # the deployed game (the frame games-guard serves it in) against the deployed relay
 ```
+
+The relay limits password tries to 6 a minute per IP, and part 1 of `mp-e2e` uses some. Leave about a minute between two production runs.
 
 `mp-e2e` covers:
 
