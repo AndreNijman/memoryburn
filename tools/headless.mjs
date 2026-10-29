@@ -197,6 +197,8 @@ if (run('net')) {
   const bytes = JSON.stringify(msg).length;
   const mirror = N.newMirror(meta);
   s.players.forEach(p => N.applySheet(mirror, p.slot, JSON.parse(JSON.stringify(N.sheet(p)))));
+  const sh0 = N.sheet(s.players[0]);
+  if ('x' in sh0 || 'hp' in sh0 || 'dash_cd' in sh0 || !('items' in sh0) || !('shop' in sh0)) throw new Error('a sheet carries only what the rows do not');
   const f = N.decode(msg);
   N.applyFrame(mirror, f);
   const near = (a, b, tol) => Math.abs(a - b) <= tol;

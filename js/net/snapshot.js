@@ -8,7 +8,7 @@
  *   MB.snap.encode(state, events) -> {t:'snap', ...}   host, 20 Hz: run fields + rows of rounded ints
  *   MB.snap.decode(msg) -> frame                         guest: rows back into entity objects ({k, ents, run, events})
  *   MB.snap.applyFrame(mirror, frame)                    guest: make the mirror show this frame
- *   MB.snap.sheet(player) -> object                      host: the whole player minus pet positions (shop, stats, items)
+ *   MB.snap.sheet(player) -> object                      host: the player minus what the P/T rows carry (shop, stats, items)
  *   MB.snap.applySheet(mirror, slot, sheet)              guest
  *   MB.snap.newMirror(meta) -> state                     guest: a fresh mirror for the run in start metadata
  *   MB.snap.trimEvent(e) -> event                        host: a sim event with its numbers rounded for the wire
@@ -117,9 +117,13 @@
 
   // Everything about a player that the shop, stats panel and HUD read. Pets keep their kind and cooldown only;
   // their positions ride the snapshot.
+  // fields the P row already carries every snapshot; a sheet with them would change every step (so go out at every
+  // check) and drag the mirror to the host's newest position between interpolated frames
+  var LIVE = { x: 1, y: 1, vx: 1, vy: 1, aimX: 1, aimY: 1, face: 1, hp: 1, alive: 1, cooldown: 1, iframe: 1, dash_cd: 1, dashing: 1,
+    dash_t: 1, dash_dx: 1, dash_dy: 1, dash_prev: 1, materials: 1, pets: 1 };
   function sheet(p) {
     var o = {}, k;
-    for (k in p) if (k !== 'pets') o[k] = p[k];
+    for (k in p) if (!LIVE[k]) o[k] = p[k];
     o.pets = p.pets.map(function (pt) { return { kind: pt.kind, cd: 0, x: 0, y: 0, ang: 0 }; });
     return JSON.parse(JSON.stringify(o));
   }
