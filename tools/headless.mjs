@@ -181,6 +181,59 @@ if (run('snapshot')) {
   check('snapshot: JSON round trip continues identically', MB.sim.hash(s) === MB.sim.hash(copy));
 }
 
+if (run('net')) {
+  // co-op wire format: a crowded 3-player state goes host -> JSON -> guest mirror and every field the renderer,
+  // HUD and shop read comes out the same (positions to the rounding of the codec)
+  const N = MB.snap, meta = { seed: 4242, difficulty: 'Hard', players: [{ arch: 1 }, { arch: 4 }, { arch: 7 }] };
+  const s = MB.sim.create(meta);
+  s.wave = 12; s.players.forEach(p => { p.bullets = 8; }); // crowded: about 100 enemies and hundreds of bullets
+  let evs = [];
+  for (let t = 0; t < 60 * 9; t++) {
+    MB.sim.step(s, s.players.map((_, i) => MB.bot.input(s, i)));
+    evs = evs.concat(s.events.map(N.trimEvent));
+  }
+  s.players[0].pets.push({ kind: 'turret_buddy', cd: 0, x: s.players[0].x + 50, y: s.players[0].y, ang: 1.2 });
+  const msg = JSON.parse(JSON.stringify(N.encode(s, evs.slice(-60))));
+  const bytes = JSON.stringify(msg).length;
+  const mirror = N.newMirror(meta);
+  s.players.forEach(p => N.applySheet(mirror, p.slot, JSON.parse(JSON.stringify(N.sheet(p)))));
+  const f = N.decode(msg);
+  N.applyFrame(mirror, f);
+  const near = (a, b, tol) => Math.abs(a - b) <= tol;
+  const bad = [];
+  for (const k of ['tick', 'wave', 'phase', 'biome', 'kills', 'difficulty']) if (mirror[k] !== s[k]) bad.push(k);
+  if (!near(mirror.waveTime, s.waveTime, 0.01)) bad.push('waveTime');
+  if (JSON.stringify(mirror.quest) !== JSON.stringify(s.quest)) bad.push('quest');
+  s.players.forEach((p, i) => {
+    const q = mirror.players[i];
+    for (const k of ['x', 'y', 'aimX', 'aimY']) if (!near(q[k], p[k], 0.51)) bad.push('p' + i + '.' + k);
+    for (const k of ['alive', 'dashing', 'cash', 'materials', 'max_hp', 'damage', 'arch', 'items', 'shop', 'range_px', 'crit_chance'])
+      if (JSON.stringify(q[k]) !== JSON.stringify(p[k])) bad.push('p' + i + '.' + k);
+    if (!near(q.hp, p.hp, 0.051) || !near(q.dash_cd, p.dash_cd, 0.006)) bad.push('p' + i + '.hp/dash');
+    if (q.pets.length !== p.pets.length) bad.push('p' + i + '.pets');
+  });
+  const ids = l => l.map(o => o.id).join();
+  if (ids(mirror.enemies) !== ids(s.enemies.filter(e => !e.dead))) bad.push('enemy ids');
+  if (ids(mirror.bullets) !== ids(s.bullets)) bad.push('bullet ids');
+  if (ids(mirror.ebullets) !== ids(s.ebullets) || ids(mirror.pickups) !== ids(s.pickups)) bad.push('ebullet/pickup ids');
+  mirror.enemies.forEach((e, i) => {
+    const o = s.enemies.filter(x => !x.dead)[i];
+    if (e.etype !== o.etype || e.size !== o.size || !near(e.x, o.x, 0.51) || e.max_hp !== Math.round(o.max_hp)) bad.push('enemy ' + e.id);
+  });
+  mirror.bullets.forEach((b, i) => {
+    const o = s.bullets[i];
+    if (b.kind !== o.kind || b.r !== o.r || b.color !== o.color || !near(b.x, o.x, 0.51)) bad.push('bullet ' + b.id);
+  });
+  check('net: snapshot -> JSON -> mirror keeps what the screens read', bad.length === 0,
+    bad.slice(0, 8).join(', ') || `${s.enemies.length} enemies, ${s.bullets.length} bullets, ${(bytes / 1024).toFixed(1)} KB`);
+  check('net: events survive and keep their types', f.events.length > 0 && f.events.every(e => typeof e.t === 'string'));
+  check('net: a crowded snapshot stays under 48 KB', bytes < 48 * 1024, (bytes / 1024).toFixed(1) + ' KB');
+  // the mirror is never stepped, so a guest can't drift; the codec doesn't touch the host state
+  const h0 = MB.sim.hash(s); N.encode(s, []); N.sheet(s.players[0]);
+  check('net: encoding leaves host state untouched', MB.sim.hash(s) === h0);
+  check('net: data hash is stable', MB.dataHash() === MB.dataHash() && MB.dataHash().length > 3);
+}
+
 if (run('audio')) {
   // every sound effect and drum renders: finite, not silent, normalised, a sane length
   const SND = MB.sounds, DSP = MB.dsp, SG = MB.songs, D = MB.data, SR = 22050, bad = [];

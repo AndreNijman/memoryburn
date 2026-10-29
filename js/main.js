@@ -3,7 +3,12 @@
  *
  * Boot, the fixed-step loop and the screen state machine. The sim steps at D.STEP (60 Hz); rendering
  * interpolates between the previous and current step. Everything that touches the sim goes through
- * stepRun / app.cmd so a networked host can replace those two later.
+ * stepRun / app.cmd.
+ *
+ * Online co-op (js/net/net.js): app.coop is set for the whole run. The host steps the real sim on every screen
+ * (menus don't pause a shared run), feeds the other slots from MB.net.inputFor and sends its events out. A guest
+ * never steps: app.sim is a mirror that MB.net fills from snapshots, app.cmd sends commands to the host, and the
+ * frame listener plays each snapshot's events.
  */
 (function () {
   'use strict';
@@ -38,7 +43,7 @@
     settings: loadSettings(), debug: params.has('debug'),
     sim: null, slot: 0, prev: null, alpha: 1, acc: 0,
     arch: 0, difficulty: 'Normal', pauseTab: 0, story: null, ending: null, bannerT: 0, deathT: 0,
-    dps: 0, fps: 60, optionsReturn: 'menu'
+    dps: 0, fps: 60, optionsReturn: 'menu', coop: false, toasts: [], coopMsg: ''
   };
   var dmgLog = [];
   var attract = { sim: null, prev: null, acc: 0, alpha: 1 };
@@ -87,21 +92,70 @@
       app.go('intro');
     } else app.go('play');
   };
-  app.toMenu = function () { app.sim = null; R.fx.reset(); app.go('menu'); };
+  app.toMenu = function () {
+    if (app.coop || MB.net.state !== 'idle') MB.net.leave();
+    app.coop = false; app.sim = null; R.fx.reset(); app.go('menu');
+  };
 
-  // Sim commands from the UI. In a networked build this becomes "send to host".
+  app.toast = function (msg) {
+    app.toasts.push({ msg: String(msg), t: 0 });
+    if (app.toasts.length > 4) app.toasts.shift();
+  };
+
+  // Sim commands from the UI. A guest sends them to the host, which applies them for that guest's slot.
   app.cmd = function (c) {
     if (!app.sim) return false;
-    var ok = MB.sim.command(app.sim, app.slot, c);
-    R.fx.consume(app.sim.events, fxSettings(true));
-    MB.audio.events(app, app.sim.events);
+    if (app.coop && app.sim.remote) return MB.net.sendCmd(c);
+    return app.hostCmd(app.slot, c);
+  };
+  app.hostCmd = function (slot, c) {
+    var s = app.sim;
+    if (!s || s.remote) return false;
+    var ok = MB.sim.command(s, slot, c);
+    R.fx.consume(s.events, fxSettings(true));
+    MB.audio.events(app, s.events);
+    if (app.coop) { MB.net.hostEvents(s.events); MB.net.hostChanged(); }
     afterSim();
     return ok;
   };
 
+  // A co-op run starts (or this client becomes the host of one). info: {meta, localSlot, role, spectator, late, migrated}
+  app.startCoopRun = function (info) {
+    app.coop = true; app.slot = info.localSlot | 0;
+    if (info.migrated) { app.prev = null; app.acc = 0; app.alpha = 1; afterSim(); return; } // net already swapped in the restored sim
+    var meta = info.meta;
+    app.sim = info.role === 'host' ? MB.sim.create(meta) : MB.snap.newMirror(meta);
+    app.prev = null; app.acc = 0; app.alpha = 1; dmgLog = []; app.dps = 0;
+    app.bannerT = 2.4; app.deathT = 0; app.pauseTab = 0;
+    R.fx.reset(); MB.radio.reset(); app.ending = null;
+    var me = meta.players[app.slot];
+    app.arch = me ? me.arch : 0;
+    if (!app.settings.skipStory && !info.late && !info.spectator) {
+      app.story = { beats: ST.resolve(ST.intro, app.arch), idx: 0, chars: 0, head: SC.actHead(1), sub: 'Doc\'s clinic, Neon Grid' };
+      app.go('intro');
+    } else { MB.net.storyDone(); app.go('play'); }
+  };
+
+  // In co-op the phase moves on without this client (others ready up, a late joiner lands mid-shop), so any
+  // in-run screen follows it; the pause menu is only an overlay there.
+  var COOP_RUN = { play: 1, pause: 1, shop: 1, preview: 1, gameover: 1 };
   function afterSim() {
     var s = app.sim;
     if (!s) return;
+    if (app.coop) {
+      var sc = app.screen;
+      if (!COOP_RUN[sc]) return;
+      if (s.phase === 'play' && sc !== 'play' && sc !== 'pause') { R.fx.reset(); app.prev = null; app.acc = 0; app.bannerT = 2.4; app.deathT = 0; dmgLog = []; app.go('play'); return; }
+      if (s.phase === 'shop' && sc !== 'shop') {
+        if (s.wave === ST.last && !app.settings.skipStory && sc !== 'gameover') {
+          app.ending = { stage: 'lead', choice: null, story: { beats: ST.ending.lead, idx: 0, chars: 0, head: 'The Vault', sub: 'Under the reactor' } };
+          app.go('ending');
+        } else app.go('shop');
+        return;
+      }
+      if (s.phase === 'preview' && sc !== 'preview') { sc = 'shop'; app.screen = 'shop'; }
+      if (s.phase === 'gameover' && (sc === 'play' || sc === 'pause')) { if (app.deathT <= 0) app.deathT = 1.6; return; }
+    }
     if (s.phase === 'shop' && app.screen === 'play') {
       if (s.wave === ST.last && !app.settings.skipStory) { // the campaign's last contract just ended
         app.ending = { stage: 'lead', choice: null, story: { beats: ST.ending.lead, idx: 0, chars: 0, head: 'The Vault', sub: 'Under the reactor' } };
@@ -134,14 +188,21 @@
     return inp;
   }
 
+  // What the local runner sends while a menu covers the arena: stand still, keep the aim.
+  function idleInput(p) { return { mx: 0, my: 0, dash: false, aimX: p.aimX, aimY: p.aimY, fire: false, manual: !!app.settings.manualFire }; }
+
   function stepRun(dt) {
     var s = app.sim;
     app.acc += dt;
     var n = 0;
     while (app.acc >= STEP && s.phase === 'play' && n < 8) {
       app.prev = R.snapshot(s);
-      var inputs = s.players.map(function (pl, i) { return i === app.slot ? sampleInput(s) : MB.bot.input(s, i); });
+      var inputs = s.players.map(function (pl, i) {
+        if (i === app.slot) return app.screen === 'play' ? sampleInput(s) : idleInput(pl);
+        return app.coop ? MB.net.inputFor(s, i) : MB.bot.input(s, i);
+      });
       MB.sim.step(s, inputs);
+      if (app.coop) MB.net.hostEvents(s.events);
       R.fx.consume(s.events, fxSettings(true));
       MB.radio.events(app, s.events);
       MB.audio.events(app, s.events);
@@ -182,15 +243,45 @@
     a.alpha = a.acc / STEP;
   }
 
+  // A guest: snapshots move the mirror (net.tick); this only sends input and picks up the interpolation.
+  function guestRun() {
+    var s = app.sim, v = MB.net.view();
+    app.slot = MB.net.localSlot(); // a late joiner gets a dropped runner's slot after the host hears from them
+    var p = s.players[app.slot];
+    app.prev = v.prev; app.alpha = v.alpha;
+    if (!p || MB.net.isSpectator()) return;
+    MB.net.sendInput(app.screen === 'play' && app.deathT <= 0 ? sampleInput(s) : idleInput(p));
+  }
+
+  function coopUpdate(dt) {
+    var s = app.sim, sc = app.screen;
+    if (sc === 'play') {
+      if (app.deathT > 0) {
+        app.deathT -= dt;
+        if (app.deathT <= 0) app.go('gameover');
+      } else if (IN.pressed('Escape') || IN.padPressed('start')) { app.pauseTab = 0; app.go('pause'); }
+    }
+    var held = MB.net.holding() > 0;
+    if (held) app.bannerT = 2.4; // the contract banner plays once the crew is in
+    if (s.remote) guestRun();
+    else {
+      if (!held) stepRun(dt); else { app.prev = null; app.alpha = 1; }
+      MB.net.autopilot(s);
+    }
+    if (sc === 'play' || sc === 'pause') { MB.radio.update(app, dt); app.bannerT = Math.max(0, app.bannerT - dt); }
+  }
+
   /* ------------------------------------------------------------------ frame */
   function update(dt) {
     app.t += dt; app.screenT += dt;
+    for (var ti = app.toasts.length - 1; ti >= 0; ti--) { app.toasts[ti].t += dt; if (app.toasts[ti].t > 4.5) app.toasts.splice(ti, 1); }
     var sc = app.screen;
     if (app.debug && app.sim) {
       if (IN.pressed('Digit8') && sc === 'play') app.cmd({ t: 'debugSkip' });
       if (IN.pressed('Digit9')) app.cmd({ t: 'debugCash' });
     }
-    if (sc === 'play' && app.sim) {
+    if (app.coop && app.sim) coopUpdate(dt);
+    else if (sc === 'play' && app.sim) {
       if (app.deathT > 0) {
         app.deathT -= dt;
         if (app.deathT <= 0) app.go('gameover');
@@ -200,13 +291,14 @@
       MB.radio.update(app, dt);
       app.bannerT = Math.max(0, app.bannerT - dt);
     } else if (ATTRACT_SCREENS[sc]) stepAttract(dt);
+    MB.net.tick(dt); // after the host stepped, so its snapshot is the newest state
     var ws = worldState();
     R.fx.update(dt, ws ? ws.biome : 'Neon Grid');
     MB.audio.update(app, dt);
   }
 
   function worldState() {
-    if (ATTRACT_SCREENS[app.screen]) return attract.sim;
+    if (ATTRACT_SCREENS[app.screen] || app.screen === 'coop' || app.screen === 'lobby') return attract.sim;
     return app.sim;
   }
 
@@ -221,17 +313,18 @@
     MB.sprites.zoom = v.scale;
     var ws = worldState();
     if (ws) {
-      var att = ATTRACT_SCREENS[app.screen];
+      var att = ws === attract.sim;
       var sh = R.fx.shake();
       g.save(); g.translate(sh[0], sh[1]);
       R.world(g, ws, att ? attract.prev : app.prev, att ? attract.alpha : app.alpha, app.t,
-        { rangeRing: !att && app.settings.rangeRing && app.screen === 'play', localSlot: att ? -1 : app.slot });
+        { rangeRing: !att && app.settings.rangeRing && app.screen === 'play', localSlot: att ? -1 : app.slot, names: !att && app.coop ? MB.net.nameOf : null });
       g.restore();
     }
     UI.begin(g, dt);
     var fn = SC[app.screen];
     if (app.screen === 'play' || app.screen === 'pause') SC.hud(app, g, dt);
     if (app.screen !== 'play' && fn) fn(app, g, dt);
+    SC.toasts(app, g);
     UI.end();
     g.restore();
   }
@@ -276,6 +369,59 @@
     IN.endFrame();
   }
 
+  /* ------------------------------------------------------------------ co-op wiring */
+  var CLOSE_MSG = {
+    version: 'Your game is a different version from the host\'s. Refresh the page and try again.',
+    kicked: 'The host removed you from the crew.', full: 'That crew is full.',
+    'host-left': 'The host left and the run could not carry on.', 'connection-lost': 'Lost the connection to the relay.'
+  };
+  function bindNet() {
+    var net = MB.net;
+    net.bind({
+      getSim: function () { return app.coop ? app.sim : null; },
+      setSim: function (sim) { app.sim = sim; },
+      command: function (slot, c) { return app.hostCmd(slot, c); }
+    });
+    net.on('start', function (info) { app.startCoopRun(info); });
+    net.on('frame', function (f) {
+      var s = app.sim;
+      if (!app.coop || !s) return;
+      R.fx.consume(f.events, fxSettings(true));
+      MB.radio.events(app, f.events);
+      MB.audio.events(app, f.events);
+      for (var i = 0; i < f.events.length; i++) { var e = f.events[i]; if (e.t === 'hit' && e.slot === app.slot) dmgLog.push([s.time, e.dmg]); }
+      while (dmgLog.length && dmgLog[0][0] < s.time - 3) dmgLog.shift();
+      var tot = 0; dmgLog.forEach(function (d) { tot += d[1]; });
+      app.dps = dmgLog.length ? Math.round(tot / Math.min(3, Math.max(0.5, s.time - dmgLog[0][0]))) : 0;
+      afterSim();
+    });
+    net.on('reset', function () { app.coop = false; app.sim = null; app.ending = null; R.fx.reset(); app.go('lobby'); });
+    net.on('toast', function (m) { app.toast(m); });
+    net.on('error', function (e) { if (app.screen === 'coop' || app.screen === 'lobby') app.coopMsg = e.message; });
+    net.on('closed', function (reason) {
+      if (reason === 'connection-lost-host') return; // the host keeps playing offline
+      var wasRun = app.coop;
+      // a failed join already put the relay's own message up; keep it
+      if (wasRun || app.screen === 'lobby' || !app.coopMsg) app.coopMsg = CLOSE_MSG[reason] || (reason ? String(reason) : 'Disconnected.');
+      app.coop = false; app.sim = null; app.ending = null; R.fx.reset();
+      if (wasRun || app.screen === 'lobby') app.go('coop');
+    });
+  }
+
+  // Browsers stop requestAnimationFrame in background tabs, which would freeze everyone's run while the host
+  // looks at another tab. A worker's timer keeps running, so it drives update() (no drawing) while hidden.
+  function hiddenTicker() {
+    var last = 0, w;
+    try { w = new Worker(URL.createObjectURL(new Blob(['setInterval(function () { postMessage(0); }, 33);'], { type: 'text/javascript' }))); } catch (e) { return; }
+    w.onmessage = function () {
+      if (!document.hidden || !app.coop) { last = 0; return; }
+      var now = performance.now(), dt = last ? Math.min(0.1, (now - last) / 1000) : 1 / 30;
+      last = now;
+      update(dt);
+      IN.endFrame();
+    };
+  }
+
   MB.main = {
     start: function () {
       canvas = document.getElementById('game');
@@ -283,7 +429,10 @@
       IN.attach(canvas);
       savedJson = JSON.stringify(app.settings);
       app.applySettings();
-      window.addEventListener('blur', function () { if (app.screen === 'play' && app.deathT <= 0) { app.pauseTab = 0; app.go('pause'); } });
+      // a shared run doesn't stop for one player's menu, so co-op doesn't pause on blur
+      window.addEventListener('blur', function () { if (app.screen === 'play' && app.deathT <= 0 && !app.coop) { app.pauseTab = 0; app.go('pause'); } });
+      bindNet();
+      hiddenTicker();
       if (params.has('screen')) { // ?screen=shop etc. for screenshots and debugging
         var want = params.get('screen');
         app.arch = (+params.get('arch') || 0) % 8;

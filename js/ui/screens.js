@@ -6,6 +6,8 @@
  * so the same screens work when the sim lives on a host.
  *
  *   MB.screens.<name>(app, g, dt)   names: menu options chars difficulty intro hud shop preview pause gameover ending
+ *                                   (coop and lobby live in js/ui/coop.js)
+ *   MB.screens.toasts(app, g)        short notices (co-op joins and drops) over every screen
  */
 (function () {
   'use strict';
@@ -142,7 +144,8 @@
       S.draw(g, 'char:' + i, cx, cy, { scale: 0.95, flip: i >= 4 });
     }
     if (UI.button('m:start', 'Start Run', W / 2 - 220, 680, 440, 92, { tone: 'primary', size: 46 })) app.go('chars');
-    if (UI.button('m:opts', 'Options', W / 2 - 220, 796, 440, 72, { size: 34 })) app.go('options');
+    if (UI.button('m:coop', 'Co-op', W / 2 - 220, 796, 440, 72, { size: 34, sub: 'Online, up to 4' })) { app.coopMsg = ''; app.go('coop'); }
+    if (UI.button('m:opts', 'Options', W / 2 - 220, 892, 440, 64, { size: 30 })) app.go('options');
     UI.text('WASD move  ·  Space dash  ·  auto-fire  ·  Esc pause', W / 2, H - 70, { size: 24, font: 'body', align: 'center', color: C.dim, outline: false });
     UI.text('v' + app.version, W - 24, H - 30, { size: 18, font: 'body', align: 'right', color: '#6f6480', outline: false });
   };
@@ -295,7 +298,7 @@
 
   SC.intro = function (app, g, dt) {
     backdrop(g, 0.85); scanlines(g, app.t);
-    if (!storyPanel(app, g, app.story, dt)) { app.story = null; app.saveSettings(); app.go('play'); }
+    if (!storyPanel(app, g, app.story, dt)) { app.story = null; app.saveSettings(); if (app.coop) MB.net.storyDone(); app.go('play'); }
   };
 
   // After the last contract: the lead-in, the choice, the epilogue, then Afterburn or the menu.
@@ -348,9 +351,16 @@
     st.players.forEach(function (o, k) {
       if (k === app.slot) return;
       var yy = 262 + (k - (k > app.slot ? 1 : 0)) * 40;
+      if (app.coop) {
+        UI.text(MB.net.nameOf(o.slot), 30, yy + 10, { size: 22, maxW: 150 });
+        UI.bar(190, yy, 180, 20, o.alive ? o.hp / o.max_hp : 0, o.alive ? '#ef4d5f' : '#5a5068', null);
+        if (!o.alive) UI.text('DOWN', 384, yy + 10, { size: 20, color: '#ff6a7a', outlineW: 5 });
+        return;
+      }
       UI.text('P' + (o.slot + 1), 30, yy + 10, { size: 22 });
       UI.bar(76, yy, 180, 20, o.alive ? o.hp / o.max_hp : 0, o.alive ? '#ef4d5f' : '#5a5068', null);
     });
+    if (app.coop) coopHud(app, g, st, p, VW);
     // wave + timer
     var tLeft = Math.max(0, Math.ceil(st.waveTime));
     UI.text('WAVE ' + st.wave, VW / 2, 42, { size: 40, align: 'center' });
@@ -379,7 +389,7 @@
     UI.text('DPS ' + app.dps + '   ·   ' + app.fps + ' FPS', VW - 24, H / s - 26, { size: 20, font: 'body', align: 'right', color: '#9b90ac', outline: false });
     if (app.debug) UI.text('DEBUG  8 skip · 9 +100', 24, H / s - 26, { size: 20, font: 'body', color: '#ff9a3c', outline: false });
     // wave start banner
-    if (app.bannerT > 0) {
+    if (app.bannerT > 0 && !(app.coop && MB.net.holding() > 0)) {
       var k2 = app.bannerT, inA = Math.min(1, (2.4 - k2) / 0.25), outA = Math.min(1, k2 / 0.4), al = Math.min(inA, outA);
       g.save(); g.globalAlpha = al;
       var by = 300 - (1 - inA) * 40;
@@ -391,6 +401,34 @@
     }
     MB.radio.draw(app, g, VW, H / s);
     g.restore();
+  };
+
+  function coopHud(app, g, st, p, VW) {
+    var cy = H / (app.settings.uiScale / 100) / 2;
+    var hold = MB.net.holding();
+    if (MB.net.isSpectator()) UI.text('SPECTATING', VW / 2, 170, { size: 34, align: 'center', color: P.cyan });
+    if (hold > 0 && st.phase === 'play') {
+      UI.text('Waiting for ' + hold + (hold === 1 ? ' runner' : ' runners') + ' to finish the briefing…', VW / 2, cy + 200, { size: 40, align: 'center' });
+    } else if (!MB.net.isSpectator() && !p.alive && st.phase === 'play') {
+      UI.text('DOWN', VW / 2, cy - 180, { size: 96, align: 'center', color: '#ff6a7a' });
+      UI.text('The crew has to finish the contract. Doc patches you up at the market.', VW / 2, cy - 110, { size: 30, font: 'body', align: 'center', color: C.text });
+    }
+    var net = MB.net;
+    if (net.role() === 'offline') UI.text('OFFLINE  ·  autopilot runs the crew', VW / 2, 200, { size: 22, align: 'center', color: '#ff9a3c', outlineW: 5 });
+    else UI.text(net.lobby ? net.lobby.code + '  ·  ' + net.rtt + ' ms' : '', 24, H / (app.settings.uiScale / 100) - 56, { size: 18, font: 'body', color: '#9b90ac', outline: false });
+  }
+
+  // Joins, drops and host changes in co-op; app.toasts is filled by main.js.
+  SC.toasts = function (app, g) {
+    app.toasts.forEach(function (t, i) {
+      var a = Math.min(1, t.t / 0.2, (4.5 - t.t) / 0.5);
+      if (a <= 0) return;
+      g.save(); g.globalAlpha = a;
+      var w = Math.min(1100, UI.measure(t.msg, 26, 'body') + 60), x = W / 2 - w / 2, y = H - 200 - i * 70;
+      UI.panel(x, y, w, 56, { r: 14, edge: 5, alpha: 0.95 });
+      UI.text(t.msg, W / 2, y + 28, { size: 26, font: 'body', align: 'center', color: C.text, outline: false });
+      g.restore();
+    });
   };
 
   /* ------------------------------------------------------------------ shop */
@@ -467,11 +505,22 @@
     // reroll + start
     if (UI.button('s:reroll', 'Reroute  5', 70, 980, 300, 80, { icon: 'hud:coin', size: 32, disabled: p.cash < 5 })) app.cmd({ t: 'reroll' });
     var waiting = p.ready && st.players.some(function (o) { return !o.ready; });
-    if (UI.button('s:go', waiting ? 'Waiting…' : 'Contract Start', 1400, 966, 460, 94, { tone: 'good', size: 42, disabled: waiting })) app.cmd({ t: 'ready' });
+    if (app.coop && !MB.net.isSpectator()) crewStatus(app, st, 1400 + 230, 940);
+    if (MB.net.isSpectator()) UI.text('Spectating', 1630, 1012, { size: 36, align: 'center', color: P.cyan });
+    else if (UI.button('s:go', waiting ? 'Waiting…' : 'Contract Start', 1400, 966, 460, 94, { tone: 'good', size: 42, disabled: waiting })) app.cmd({ t: 'ready' });
     // stats panel
     statsPanel(app, g, p, 1400, 40, 460, 890, hoverDeltas);
     if (tipItem) tooltip(g, tipItem, tipX, tipY);
   };
+
+  // "Waiting on: Kai, Mo" above the ready / deploy button in co-op
+  function crewStatus(app, st, cx, y) {
+    var wait = [];
+    st.players.forEach(function (o) { if (!o.ready && o.slot !== app.slot) wait.push(MB.net.nameOf(o.slot)); });
+    var me = st.players[app.slot];
+    if (!me || !me.ready || !wait.length) return;
+    UI.text('Waiting on ' + wait.join(', '), cx, y, { size: 24, font: 'body', align: 'center', color: C.dim, outline: false, maxW: 600 });
+  }
 
   function statsPanel(app, g, p, x, y, w, h, deltas) {
     UI.panel(x, y, w, h);
@@ -549,7 +598,9 @@
       });
     }
     var p = st.players[app.slot], waiting = p.ready && st.players.some(function (o) { return !o.ready; });
-    if (UI.button('pv:go', waiting ? 'Waiting…' : 'Deploy', W / 2 - 220, py + ph - 110, 440, 86, { tone: 'good', size: 44, disabled: waiting }) || (!waiting && (IN.pressed('Space') || IN.confirm()))) app.cmd({ t: 'deploy' });
+    if (app.coop) crewStatus(app, st, W / 2, py + ph - 136);
+    if (MB.net.isSpectator()) UI.text('Spectating', W / 2, py + ph - 66, { size: 40, align: 'center', color: P.cyan });
+    else if (UI.button('pv:go', waiting ? 'Waiting…' : 'Deploy', W / 2 - 220, py + ph - 110, 440, 86, { tone: 'good', size: 44, disabled: waiting }) || (!waiting && (IN.pressed('Space') || IN.confirm()))) app.cmd({ t: 'deploy' });
   };
 
   /* ------------------------------------------------------------------ pause */
@@ -558,8 +609,9 @@
     UI.dim(0.62);
     var px = 160, py = 70, pw = W - 320, ph = H - 140;
     UI.panel(px, py, pw, ph);
-    UI.text('Paused', W / 2, py + 60, { size: 64, align: 'center' });
-    app.pauseTab = UI.tabs('pt', TABS, app.pauseTab, px + 60, py + 110, pw - 120, 64);
+    UI.text(app.coop ? 'Menu' : 'Paused', W / 2, py + 60, { size: 64, align: 'center' });
+    if (app.coop) UI.text('The crew\'s run keeps going while this is open.', W / 2, py + 104, { size: 22, font: 'body', align: 'center', color: '#ff9a3c', outline: false });
+    app.pauseTab = UI.tabs('pt', TABS, app.pauseTab, px + 60, py + 124, pw - 120, 64);
     var cx = px + 60, cy = py + 220, cw = pw - 120;
     var tab = TABS[app.pauseTab], st = app.sim, p = st.players[app.slot];
     if (tab === 'Resume') {
@@ -588,6 +640,12 @@
         UI.text(r[0], cx + 240, y, { size: 34, align: 'right', color: P.yellow });
         UI.text(r[1], cx + 290, y, { size: 30, font: 'body', color: C.text, outline: false });
       });
+    } else if (tab === 'Quit' && app.coop) {
+      var hosting = MB.net.role() === 'host';
+      UI.text('Leave the crew?', W / 2, cy + 160, { size: 48, align: 'center' });
+      UI.text(hosting ? 'Another runner takes over as host and the run carries on without you.' : 'The autopilot plays your runner until you rejoin with the same name.',
+        W / 2, cy + 220, { size: 26, font: 'body', align: 'center', color: C.dim, outline: false });
+      if (UI.button('pz:quit', 'Leave', W / 2 - 220, cy + 300, 440, 90, { tone: 'danger', size: 40 })) app.toMenu();
     } else if (tab === 'Quit') {
       UI.text('Abandon this run?', W / 2, cy + 160, { size: 48, align: 'center' });
       UI.text('Progress in this run is lost.', W / 2, cy + 220, { size: 26, font: 'body', align: 'center', color: C.dim, outline: false });
@@ -622,7 +680,16 @@
       UI.text(l[1], W / 2 + 380, 536 + i * 48, { size: 30, align: 'right' });
     });
     g.restore();
-    if (app.screenT > 0.6) {
+    if (app.screenT > 0.6 && app.coop) {
+      var role = MB.net.role();
+      if (role === 'host') {
+        if (UI.button('go:lobby', 'Back to Lobby', W / 2 - 430, 850, 410, 90, { tone: 'primary', size: 40 }) || IN.confirm()) MB.net.reset();
+        if (UI.button('go:menu', 'Leave', W / 2 + 20, 850, 410, 90, { size: 44 }) || IN.back()) app.toMenu();
+      } else {
+        if (role === 'guest') UI.text('Waiting for the host to start another run…', W / 2, 820, { size: 28, font: 'body', align: 'center', color: C.dim, outline: false });
+        if (UI.button('go:menu', role === 'guest' ? 'Leave' : 'Menu', W / 2 - 205, 850, 410, 90, { size: 44 }) || IN.back()) app.toMenu();
+      }
+    } else if (app.screenT > 0.6) {
       if (UI.button('go:retry', 'Retry', W / 2 - 430, 850, 410, 90, { tone: 'primary', size: 44 }) || IN.confirm()) app.startRun();
       if (UI.button('go:menu', 'Menu', W / 2 + 20, 850, 410, 90, { size: 44 }) || IN.back()) app.toMenu();
     }

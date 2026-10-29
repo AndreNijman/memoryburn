@@ -10,6 +10,7 @@
  *   MB.input.down(code) / pressed(code)
  *   MB.input.mouse  {x, y, down, clicked, released, rdown, wheel}
  *   MB.input.sample(player, settings) -> {mx, my, dash, aimX, aimY, fire, manual}
+ *   MB.input.typed()                   printable characters typed or pasted this frame (for text fields)
  */
 (function () {
   'use strict';
@@ -24,6 +25,7 @@
   // keys the browser should not act on while the game has focus
   var DASH_KEYS = { Space: 1, ShiftLeft: 1, ShiftRight: 1 };
   var dashLatch = false;
+  var typed = '';
   var GRAB = { Space: 1, ArrowUp: 1, ArrowDown: 1, ArrowLeft: 1, ArrowRight: 1, Tab: 1 };
 
   function toVirtual(e, canvas) {
@@ -37,7 +39,12 @@
     window.addEventListener('keydown', function (e) {
       if (!keys[e.code]) { edges[e.code] = true; if (DASH_KEYS[e.code]) dashLatch = true; }
       keys[e.code] = true; I.usingPad = false;
+      if (e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) typed += e.key;
       if (GRAB[e.code]) e.preventDefault();
+    });
+    window.addEventListener('paste', function (e) {
+      var t = e.clipboardData ? e.clipboardData.getData('text') : '';
+      if (t) typed += t.replace(/[\r\n\t]+/g, ' ');
     });
     window.addEventListener('keyup', function (e) { keys[e.code] = false; });
     window.addEventListener('blur', function () { keys = Object.create(null); mouse.down = false; mouse.rdown = false; });
@@ -85,12 +92,14 @@
 
   // Drop this frame's edges so an input that changed screens is not seen again by the new screen.
   I.flush = function () {
-    edges = Object.create(null); mouse.clicked = false; dashLatch = false;
+    edges = Object.create(null); mouse.clicked = false; dashLatch = false; typed = '';
     if (I.pad) I.pad.edge = {};
   };
 
+  I.typed = function () { return typed; };
+
   I.endFrame = function () {
-    edges = Object.create(null);
+    edges = Object.create(null); typed = '';
     mouse.clicked = false; mouse.released = false; mouse.wheel = 0; mouse.moved = false;
   };
 

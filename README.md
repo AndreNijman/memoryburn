@@ -21,6 +21,21 @@ URL flags:
 | `?debug` | Turns on the debug keys: `8` ends the current contract, `9` adds 100 eddies |
 | `?seed=N` | Uses a fixed run seed |
 | `?screen=shop&arch=3` | Opens a screen directly (`menu chars difficulty play shop preview pause gameover`); used for screenshots |
+| `?relay=ws://127.0.0.1:8787` | Uses another co-op relay (a local `wrangler dev`, for example) |
+
+## Co-op
+
+Up to four players online. Pick **Co-op** on the menu, type a name, then either host a crew (lobby name, optional password, difficulty) or join one with its five-letter code or from the list of open lobbies. In the lobby everyone picks a runner and the guests ready up; the host starts the run.
+
+One player hosts: their browser runs the game and the others send their input to it through a small relay on Cloudflare (the `memoryburn-relay` Worker, source in `worker/relay.js`). There are no accounts and nothing is stored once a lobby closes. Things to know:
+
+- The run doesn't pause for anyone. Esc opens a menu, but the crew keeps playing.
+- A runner who goes down stays down until the contract ends, then Doc patches them up at the market. The run ends when the whole crew is down.
+- If a player drops, the autopilot plays their runner (moving, shopping, readying) until they rejoin with the same name from the same tab. Anyone else who joins mid-run watches.
+- If the host leaves, the player who joined next takes over from the last backup (at most 5 seconds old) and the run carries on.
+- Game speed and damage taken come from the host's settings.
+
+How it works, the wire format and how to run or deploy the relay: [docs/multiplayer.md](docs/multiplayer.md).
 
 ## Controls
 
@@ -42,7 +57,9 @@ js/core/mb.js            MB namespace, seeded RNG (mulberry32), cosmetic RNG, ma
 js/data/data.js          content and tuning, copied value for value from the original
 js/data/story.js         the campaign script: contracts, scenes, radio lines, ending (new; see docs/story.md)
 js/sim/sim.js            the game rules (deterministic)
-js/sim/bot.js            autopilot, used by the menu background and the tests
+js/sim/bot.js            autopilot, used by the menu background, dropped co-op players and the tests
+js/net/snapshot.js       co-op wire format: snapshots, player sheets, events (runs headless)
+js/net/net.js            co-op client: relay connection, lobby, host and guest roles, host migration
 js/render/sprites.js     procedural sprites baked to offscreen canvases, plus district floors
 js/render/icons.js       shop and stat icons
 js/render/fx.js          particles, splats, damage numbers, shake, weather (cosmetic only)
@@ -55,22 +72,16 @@ js/audio/music.js        look-ahead sequencer that plays a song with live Web Au
 js/audio/engine.js       AudioContext, mixer, sim events to sounds, ambience, music director
 js/ui/ui.js              immediate-mode canvas widgets
 js/ui/screens.js         every screen plus the HUD
+js/ui/coop.js            co-op screens: host / join / browse, and the lobby
 js/ui/radio.js           in-wave radio chatter driven by the script and sim events
 js/main.js               fixed-step loop, screen state machine, settings
 docs/story.md            story bible: premise, cast, reveal order, rules for new lines
 docs/audio.md            sound: mix, sound list, songs, how to add either
+docs/multiplayer.md      co-op: architecture, protocol, relay, tests, deploying
+worker/relay.js          the co-op relay (Cloudflare Worker + Durable Objects); wrangler.jsonc configures it
 reference/               recovered original source and the bytecode checker used to verify it
 tools/                   headless tests, browser playtest, benchmark, screenshot helper, sprite sheet
 ```
-
-### Ready for multiplayer
-
-The sim is written so that a host-authoritative online mode (the model broIsAPotato uses) can be added without touching the game rules:
-
-- Each step is fixed and every random roll comes from a seeded RNG, so the same seed and inputs always produce the same game. The sim never reads `Math.random`, `Date` or the DOM.
-- State is plain JSON: it can be snapshotted, sent over the network and restored.
-- Each player is a slot in `state.players` with their own stats, cash, shop and ready flag. Enemies chase the nearest living player. Waves and shops move on only when every player is ready.
-- The UI changes the game only through `app.cmd({t: 'buy' | 'lock' | 'reroll' | 'ready' | 'deploy', ...})`, and each frame's input reaches the sim as one input object per slot. A network layer would replace those two calls.
 
 ## Tests
 
@@ -80,11 +91,15 @@ node tools/playtest.mjs      # browser: real clicks and keys through menu > stor
 node tools/shot.mjs 'index.html?screen=shop' out.png 1920 1080   # screenshot
 node tools/bench.mjs         # frame rate and per-system JS cost in a crowded wave 12 (flags in the file header; --audio adds sound)
 node tools/audiocheck.mjs    # renders every song offline in Chromium and checks loudness, clipping and NaN
+node tools/mp-e2e.mjs        # co-op: relay protocol, then a 3-client run with the real sim through a local relay
+node tools/mp-playtest.mjs   # co-op: two browsers host, join by code, play, shop and drop out through real clicks
 ```
+
+The co-op tests start the relay with `wrangler dev --local` on 127.0.0.1. Set `MB_RELAY=wss://…` to test a deployed relay instead.
 
 Headless Chromium draws the canvas on the CPU, so the bench's fps is a worst case. Add `BENCH_ARGS='--disable-gpu-vsync --disable-frame-rate-limit'` to measure uncapped, or `BENCH_ARGS='--headless=new --enable-gpu --ignore-gpu-blocklist'` to use the GPU.
 
-The browser tools use Playwright. If it isn't installed here, they borrow it from `../tree/node_modules`.
+The browser tools use Playwright and the co-op tests use `ws`. If they aren't installed here (`npm install`), they borrow them from `../tree/node_modules`.
 
 ## Differences from the original
 

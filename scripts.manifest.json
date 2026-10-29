@@ -4,6 +4,7 @@
   {"path": "js/data/story.js", "env": "any"},
   {"path": "js/sim/sim.js", "env": "any"},
   {"path": "js/sim/bot.js", "env": "any"},
+  {"path": "js/net/snapshot.js", "env": "any"},
   {"path": "js/audio/dsp.js", "env": "any"},
   {"path": "js/audio/sounds.js", "env": "any"},
   {"path": "js/audio/songs.js", "env": "any"},
@@ -14,8 +15,10 @@
   {"path": "js/input/input.js", "env": "browser"},
   {"path": "js/audio/music.js", "env": "browser"},
   {"path": "js/audio/engine.js", "env": "browser"},
+  {"path": "js/net/net.js", "env": "browser"},
   {"path": "js/ui/ui.js", "env": "browser"},
   {"path": "js/ui/screens.js", "env": "browser"},
+  {"path": "js/ui/coop.js", "env": "browser"},
   {"path": "js/ui/radio.js", "env": "browser"},
   {"path": "js/main.js", "env": "browser"}
 ]

@@ -1,0 +1,19 @@
+{
+  "name": "memoryburn",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tools/headless.mjs",
+    "playtest": "node tools/playtest.mjs",
+    "mp": "node tools/mp-e2e.mjs",
+    "mp:browser": "node tools/mp-playtest.mjs",
+    "check": "node --check worker/relay.js && wrangler deploy --dry-run --outdir .wrangler/dry",
+    "relay:dev": "wrangler dev",
+    "relay:deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.32.0",
+    "ws": "^8.21.3",
+    "playwright": "^1.62.1"
+  }
+}

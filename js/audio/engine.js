@@ -186,8 +186,8 @@
           play('pickup_' + e.kind, { x: e.x, jit: 0, rate: Math.pow(2, (PENT[combo % 5] + 12 * Math.floor(combo / 5)) / 12 * 0.5) });
           break;
         case 'waveEnd': play('waveClear'); if (e.questDone) play('questDone', { delay: 0.5 }); break;
-        case 'buy': play('buy'); break;
-        case 'reroll': play('reroll'); break;
+        case 'buy': if (e.slot === me) play('buy'); break;
+        case 'reroll': if (e.slot === me) play('reroll'); break;
       }
     }
   };

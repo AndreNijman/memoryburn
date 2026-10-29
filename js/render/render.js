@@ -181,7 +181,7 @@
     for (i = 0; i < na; i++) {
       var ac = actors[i];
       if (ac.k === 0) drawEnemy(g, ac.o, ac.x, ac.y, t);
-      else drawPlayer(g, ac.o, ac.x, ac.y, t, { rangeRing: opts.rangeRing && ac.o.slot === opts.localSlot, hurt: ac.o.slot === opts.localSlot && R.fx.hurtFlash > 0.25, label: state.players.length > 1 ? 'P' + (ac.o.slot + 1) : null });
+      else drawPlayer(g, ac.o, ac.x, ac.y, t, { rangeRing: opts.rangeRing && ac.o.slot === opts.localSlot, hurt: ac.o.slot === opts.localSlot && R.fx.hurtFlash > 0.25, label: state.players.length > 1 ? (opts.names ? opts.names(ac.o.slot) : 'P' + (ac.o.slot + 1)) : null });
     }
 
     // pets
