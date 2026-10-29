@@ -328,6 +328,31 @@ async function coop(base) {
     MB_cmd(H, 0, { t: 'deploy' }); G1.net.sendCmd({ t: 'deploy' }); G2.net.sendCmd({ t: 'deploy' });
     await until(() => H.sim.phase === 'play' && H.sim.wave === 2 && G1.sim.wave === 2 && G1.sim.phase === 'play', 'contract 2 on every client');
 
+    // a guest's socket dies mid-run: it reconnects by itself and gets its runner back
+    const g1tick = G1.sim.tick;
+    G1.net._state.ws.terminate(); // the connection just dies (no close handshake)
+    await until(() => H.net.botSlot(1), 'host notices the dead socket');
+    await until(() => G1.net.role() === 'guest' && G1.net.localSlot() === 1 && !G1.net.isSpectator() && !H.net.botSlot(1), 'auto-reconnect rebinds slot 1', 15000)
+      .catch(e => { throw new Error(e.message + ' ' + JSON.stringify({ role: G1.net.role(), state: G1.net.state, slot: G1.net.localSlot(), spec: G1.net.isSpectator(), bot: H.net.botSlot(1), orphans: H.net._state.orphans, toasts: G1.toasts })); });
+    await until(() => G1.sim.tick > g1tick + 60, 'reconnected guest keeps receiving snapshots');
+    assert.equal(G1.starts.length, 1, 'a reconnect is not a new run');
+    assert.equal(G1.closed.length, 0);
+
+    // the guest stops hearing anything but the relay still holds its old socket (sleeping laptop, switched network):
+    // the silence watchdog rejoins, and the host hands the runner from the stale entry to the new connection
+    const stale = G1.net._state.ws, staleId = G1.net._state.id;
+    stale.onmessage = null; stale.close = () => {}; // keep the old socket open on the relay
+    G1.net._state.heardAt = -1e9;
+    await until(() => G1.net._state.ws && G1.net._state.ws !== stale && G1.net._state.id && G1.net._state.id !== staleId && G1.net.state === 'running', 'watchdog rejoins', 15000);
+    await until(() => H.net._state.slots[G1.net._state.id] && H.net._state.slots[G1.net._state.id].slot === 1, 'stale entry handed over', 8000)
+      .catch(e => { throw new Error(e.message + ' ' + JSON.stringify({ slots: H.net._state.slots, orphans: H.net._state.orphans })); });
+    assert.ok(!H.net._state.slots[staleId] && !H.net.botSlot(1), 'stale entry gone and no autopilot');
+    const g1tick2 = G1.sim.tick;
+    stale.terminate();
+    await until(() => G1.sim.tick > g1tick2 + 40, 'guest keeps receiving snapshots after the stale socket closes');
+    assert.ok(!H.net.botSlot(1) && !Object.keys(H.net._state.orphans).length, 'the stale socket closing orphans nothing');
+    assert.equal(G1.starts.length, 1);
+
     // a guest drops: the autopilot plays their runner, and shops + readies for them
     G2.net.leave();
     await until(() => H.net.botSlot(2), 'slot 2 on autopilot');

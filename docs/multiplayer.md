@@ -28,7 +28,8 @@ After the host presses Start, everyone gets the opening story unless they turned
 
 | Event | What happens |
 | --- | --- |
-| A guest's connection drops | The guest retries five times with backoff (1, 2, 4, 5, 5 seconds). |
+| A guest's connection drops | The guest retries five times with backoff (1, 2, 4, 5, 5 seconds) and gets its runner back. |
+| A guest's connection goes quiet without closing | During a run the host sends at least 5 frames a second. If a guest hears nothing for 8 s (a sleeping laptop, a network switch), it drops the socket itself and rejoins. If the relay still lists the old socket, the host hands the runner from that stale entry to the new connection when the name and tab token match. |
 | A guest leaves or doesn't come back | Their slot becomes an orphan. The autopilot moves, shoots, shops and readies for it. |
 | The same name rejoins from the same tab | It gets the slot back. The tab token lives in `sessionStorage`. After a host migration nobody knows the tokens, so the name alone counts. |
 | Anyone else joins a running game | They spectate: they see the run and their inputs are ignored. Back in the lobby they get a free seat. |
@@ -97,7 +98,7 @@ wrangler deploy              # publish (workers.dev + relay.memoryburn.andrenijm
 curl https://relay.memoryburn.andrenijman.com/health
 ```
 
-The client connects to `wss://memoryburn-relay.tung-tung-tung-sahur.workers.dev` (`DEFAULT_RELAY` in `js/net/net.js`), and `?relay=` overrides it. The custom domain serves the same worker.
+The client connects to `wss://relay.memoryburn.andrenijman.com` (`DEFAULT_RELAY` in `js/net/net.js`), and `?relay=` overrides it. `wss://memoryburn-relay.tung-tung-tung-sahur.workers.dev` serves the same worker.
 
 ## Tests
 
@@ -117,6 +118,7 @@ MB_RELAY=wss://relay.memoryburn.andrenijman.com node tools/mp-e2e.mjs   # the sa
 - input forwarding and dash latching
 - guest commands and the command whitelist
 - shop, ready and deploy into contract 2
+- a guest whose socket dies reconnecting on its own, and the silence watchdog rejoining while the relay still holds the old socket
 - the autopilot taking a dropped runner, and a same-name rejoin
 - a spectator
 - host migration from the backup

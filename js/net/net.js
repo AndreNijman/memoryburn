@@ -28,7 +28,7 @@
 (function () {
   'use strict';
   var D = MB.data;
-  var DEFAULT_RELAY = 'wss://memoryburn-relay.tung-tung-tung-sahur.workers.dev';
+  var DEFAULT_RELAY = 'wss://relay.memoryburn.andrenijman.com'; // same worker as memoryburn-relay.tung-tung-tung-sahur.workers.dev
   var PROTO = 1, MAX_PLAYERS = 4, SNAP_HZ = 20, IDLE_SNAP_HZ = 5, INPUT_HZ = 30, FULL_EVERY = 5, INTERP_DELAY = 0.1;
   var GUEST_CMDS = { buy: 1, lock: 1, reroll: 1, ready: 1, deploy: 1 };
   var W = D.VIRTUAL_W, H = D.VIRTUAL_H;
@@ -118,16 +118,19 @@
           S.hostArch = clamp(o.arch | 0, 0, D.ARCHETYPES.length - 1);
         }
       }
-      setState('connecting');
+      S.rejoining = !!reconnecting; // a reconnect keeps the run: state stays 'running'
+      if (!reconnecting) setState('connecting');
       var base = relayUrl(), ws;
       var url = create ? base + '/?create=1' : base + '/?code=' + encodeURIComponent(S.opts.code);
       try { ws = new WebSocket(url); } catch (e) { setState('idle'); reject(e); return; }
       S.ws = ws; S.pending = { resolve: resolve, reject: reject };
+      S.heardAt = S.clock;
       ws.onopen = function () {
         send({ t: create ? 'create' : 'join', player: S.name, password: S.password, lobbyName: S.lobbyName, difficulty: S.cfg.difficulty, world: S.cfg.difficulty });
       };
       ws.onmessage = function (ev) {
         if (ws !== S.ws) return;
+        S.heardAt = S.clock;
         var m;
         try { m = JSON.parse(ev.data); } catch (e) { return; }
         if (m && typeof m === 'object') { try { onMessage(m); } catch (err) { if (window.console) console.error('net handler ' + m.t, err); } }
@@ -141,7 +144,12 @@
     S.ws = null;
     var reason = (ev && ev.reason) || 'Connection lost';
     if (S.leaving) return;
-    if (S.pending) { var p = S.pending; S.pending = null; setState('idle'); S.role = 'offline'; p.reject(new Error(reason)); return; }
+    if (S.pending) {
+      var p = S.pending; S.pending = null;
+      if (!S.rejoining) { setState('idle'); S.role = 'offline'; }
+      p.reject(new Error(reason));
+      return;
+    }
     if (S.state === 'running' && S.role === 'guest' && S.opts) { scheduleReconnect(); return; }
     if (S.state === 'running' && S.role === 'host') {
       S.role = 'offline'; S.id = 0;
@@ -244,7 +252,8 @@
     S.id = +m.you; S.hostId = +m.host || S.id; S.code = m.code || S.code;
     if (S.opts) S.opts.code = S.code;
     S.role = isHost() ? 'host' : 'guest';
-    var reconnecting = S.state === 'running';
+    var reconnecting = S.rejoining && S.state === 'running';
+    S.rejoining = false;
     if (isHost() && S.opts && S.opts.create) {
       S.slots = {}; S.peers = {};
       S.slots[S.id] = { slot: 0, arch: S.hostArch, name: S.name, ready: true, ver: ver() };
@@ -292,6 +301,13 @@
       var otok = S.orphanTok[key] || '';
       // rebind a dropped runner's slot only for the same browser; after a host migration nobody knows tokens, so name wins
       if (S.orphans[key] !== undefined && (!otok || otok === String(m.tok || ''))) { slot = S.orphans[key]; delete S.orphans[key]; delete S.orphanTok[key]; }
+      // the same tab back before the relay noticed its old socket died: take the runner over from the stale entry
+      for (var old in S.slots) {
+        var os = S.slots[old];
+        if (slot < 0 && +old !== from && os.slot >= 0 && os.tok && os.tok === String(m.tok || '') && String(os.name).toLowerCase() === key) {
+          slot = os.slot; delete S.slots[old]; delete S.peers[old];
+        }
+      }
     } else slot = firstFreeSlot();
     if (S.state !== 'running' && slot < 0) { sendTo(from, { t: 'kick', reason: 'full' }); return; }
     var arch = 0;
@@ -581,6 +597,14 @@
 
   function guestTick(dt) {
     advanceFrames();
+    // the host sends at least 5 snapshots a second during a run; silence this long means the socket is dead even
+    // if the browser hasn't noticed (sleeping laptop, switched network), so drop it and rejoin
+    if (S.state === 'running' && S.ws && S.ws.readyState === 1 && S.clock - S.heardAt > 8) {
+      var dead = S.ws;
+      try { dead.onclose = null; dead.onmessage = null; dead.close(4000, 'silent'); } catch (e) { /* gone */ }
+      if (S.ws === dead) onClose({ reason: 'silent' });
+      return;
+    }
     if (S.state === 'running' && S.clock - S.lastSnapAt > 4 && S.clock - S.reqAt > 4) { S.reqAt = S.clock; send({ t: 'snapshot-request' }); }
     void dt;
   }
